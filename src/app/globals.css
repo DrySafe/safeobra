@@ -489,3 +489,14 @@ html[data-theme="dark"] {
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+/* Equal touch targets and a clear gap between primary and secondary auth actions. */
+.auth-actions {
+  display: grid;
+  gap: 12px;
+}
+.auth-actions form > div > button[type="submit"],
+.auth-actions > .auth-switch {
+  width: 100%;
+  min-height: 48px;
+}

@@ -8,6 +8,7 @@ import { db } from "@/lib/supabase/server";
 import { access, session } from "./access";
 import { rate } from "./rate";
 import * as S from "@/lib/schemas";
+import { authErrorMessage, type AuthFailure } from "@/lib/auth-errors";
 export type Result = { ok: boolean; message: string; link?: string };
 const fail = (error: unknown): Result => ({
   ok: false,
@@ -18,6 +19,18 @@ const fail = (error: unknown): Result => ({
         ? error.message
         : "Não foi possível concluir a operação",
 });
+// Log only safe diagnostic fields; no email, password, token or provider message.
+function logAuthFailure(operation: "signup" | "login", error: AuthFailure) {
+  const code =
+    typeof error.code === "string" && /^[a-z0-9_]+$/i.test(error.code)
+      ? error.code
+      : "unknown";
+  console.warn("[auth] request failed", {
+    operation,
+    code,
+    status: error.status,
+  });
+}
 export async function authAction(kind: string, raw: unknown): Promise<Result> {
   try {
     const data = S.loginSchema.parse(raw);
@@ -35,10 +48,10 @@ export async function authAction(kind: string, raw: unknown): Promise<Result> {
         ...data,
         options: { emailRedirectTo: url + "/auth/callback" },
       });
-      if (error)
-        throw new Error(
-          "Não foi possível cadastrar. Verifique os dados ou tente mais tarde.",
-        );
+      if (error) {
+        logAuthFailure("signup", error);
+        return { ok: false, message: authErrorMessage("signup", error) };
+      }
       return {
         ok: true,
         message: "Confira seu e-mail para confirmar o cadastro.",
@@ -46,8 +59,10 @@ export async function authAction(kind: string, raw: unknown): Promise<Result> {
     }
     if (kind !== "login") throw new Error("Operação inválida");
     const { error } = await client.auth.signInWithPassword(data);
-    if (error)
-      throw new Error("E-mail ou senha inválidos, ou e-mail não confirmado.");
+    if (error) {
+      logAuthFailure("login", error);
+      return { ok: false, message: authErrorMessage("login", error) };
+    }
     return { ok: true, message: "Acesso autorizado" };
   } catch (e) {
     return fail(e);

@@ -36,6 +36,14 @@ Todas as variáveis do app são consumidas no servidor. Na Vercel, cadastre `SUP
 5. Reinicie a aplicação. Crie uma conta, confirme o e-mail e crie a primeira obra; o criador vira ADM automaticamente. Convites aceitos exigem e-mail confirmado também no banco.
 6. O bucket `obra-anexos` é criado **privado** pela migration. Não crie policies públicas de escrita: o endpoint de servidor verifica os bytes e grava com a service role; os metadados usam a sessão e RLS. Downloads usam a sessão normal e URLs de 60 segundos.
 
+## Cadastro e envio de confirmação
+
+O cadastro mantém a confirmação de e-mail obrigatória. Configure um **SMTP próprio** em [Supabase → Authentication → SMTP](https://supabase.com/dashboard/project/kjryjmuauloebjvbcvqx/auth/smtp): host, porta, usuário, senha e remetente verificado do seu provedor. Não grave esses valores neste arquivo ou no Git.
+
+O serviço de e-mail padrão do Supabase tem restrição de destinatários e cota reduzida (o projeto estava configurado com 2 envios por hora). O erro `over_email_send_rate_limit`/HTTP 429 impede o envio de confirmação e precisa ser resolvido na configuração de e-mail. Aumentar o limite do app ou desativar a confirmação não resolve a configuração de entrega.
+
+As Server Actions do Next.js podem responder HTTP 200 mesmo quando a operação retorna `{ ok: false }`. A interface mostra a mensagem da operação; o status HTTP isolado não confirma que o cadastro foi concluído. Falhas do provedor são registradas no servidor apenas com operação, código e status, sem e-mail, senha, token ou mensagem bruta.
+
 ## Regras financeiras
 
 - Gasto: quantidade × valor unitário, arredondado para centavos pelo PostgreSQL. O total não é fornecido pelo navegador.

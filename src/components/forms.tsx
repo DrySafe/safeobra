@@ -184,7 +184,9 @@ export function DataForm({
         ))}
       </div>
       <div>
-        <button disabled={pending}>{pending ? "Salvando…" : title}</button>
+        <button type="submit" disabled={pending}>
+          {pending ? "Salvando…" : title}
+        </button>
       </div>
       {result && (
         <div role="status" className={"notice " + (!result.ok ? "error" : "")}>
@@ -377,7 +379,7 @@ export function Print() {
 export function LoginForm() {
   const [signup, setSignup] = useState(false);
   return (
-    <>
+    <div className="auth-actions">
       <DataForm
         key={String(signup)}
         kind={signup ? "signup" : "login"}
@@ -391,10 +393,14 @@ export function LoginForm() {
           },
         ]}
       />
-      <button className="secondary" onClick={() => setSignup(!signup)}>
+      <button
+        type="button"
+        className="secondary auth-switch"
+        onClick={() => setSignup(!signup)}
+      >
         {signup ? "Já tenho conta" : "Criar conta"}
       </button>
-    </>
+    </div>
   );
 }
 
