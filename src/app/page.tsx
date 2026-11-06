@@ -155,8 +155,10 @@ export default async function Home({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    !(process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL) ||
+    !(
+      process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    )
   )
     return (
       <main className="auth">

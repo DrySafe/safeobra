@@ -2,7 +2,7 @@ import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { createHmac } from "node:crypto";
 export async function rate(scope: string, identity: string, limit = 20) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL,
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL,
     key = process.env.SUPABASE_SERVICE_ROLE_KEY,
     salt = process.env.RATE_LIMIT_SALT;
   if (!url || !key || !salt)

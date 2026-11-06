@@ -15,15 +15,17 @@ npm run dev
 
 As variáveis do exemplo estão intencionalmente vazias:
 
-| Variável | Uso |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | URL HTTPS do projeto Supabase |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública anon do projeto; a proteção é RLS |
-| `SUPABASE_SERVICE_ROLE_KEY` | Exclusivamente servidor: rate limit e upload validado; nunca exponha no navegador |
-| `APP_URL` | Origem canônica da aplicação, sem barra final; usada em callback, convites e validação de origem |
-| `RATE_LIMIT_SALT` | Segredo aleatório de pelo menos 32 bytes, usado para anonimizar as chaves do rate limit |
+| Variável                    | Uso                                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| `SUPABASE_URL`              | URL HTTPS do projeto Supabase                                                                    |
+| `SUPABASE_ANON_KEY`         | Chave anon usada apenas pelo servidor; a proteção dos dados é RLS                                |
+| `SUPABASE_SERVICE_ROLE_KEY` | Exclusivamente servidor: rate limit e upload validado; nunca exponha no navegador                |
+| `APP_URL`                   | Origem canônica da aplicação, sem barra final; usada em callback, convites e validação de origem |
+| `RATE_LIMIT_SALT`           | Segredo aleatório de pelo menos 32 bytes, usado para anonimizar as chaves do rate limit          |
 
 Gere `RATE_LIMIT_SALT` localmente com um gerenciador de segredos. Não use valores de exemplo como credenciais. Configure os valores na Vercel ou no ambiente seguro; não os envie pelo chat, não os coloque no README ou no Git. Nenhum segredo é necessário para os testes locais isolados.
+
+Todas as variáveis do app são consumidas no servidor. Na Vercel, cadastre `SUPABASE_URL` e `SUPABASE_ANON_KEY` sem o prefixo `NEXT_PUBLIC_`. Os nomes legados são aceitos somente como compatibilidade com ambientes existentes; não são necessários no deploy.
 
 ## Configurar Supabase
 
@@ -91,7 +93,6 @@ O repositório inclui `vercel.json` e fixa Node.js 24 em `package.json`. O códi
 As variáveis do ambiente de desenvolvimento não são copiadas automaticamente para a Vercel. Cadastre as cinco variáveis da tabela em **Project → Settings → Environment Variables**, nos ambientes utilizados (Production e/ou Preview). Para `APP_URL`, use a origem HTTPS do deploy, sem barra final. O callback autorizado no Supabase deve ser essa origem seguida de `/auth/callback`.
 
 Para permitir deploy pela API, configure `VERCEL_TOKEN` como segredo na ferramenta de execução, limitado ao destino `api.vercel.com`. Gere-o em https://vercel.com/account/tokens com acesso à conta/equipe do projeto. Esse token é credencial de deploy; não é uma variável de runtime do app e não deve ser enviado ao navegador ou ao Git. Uma conexão do plugin Vercel disponível nesta conversa também pode fornecer o acesso necessário.
-
 
 1. Envie o projeto para seu repositório e importe na Vercel como Next.js; configure Node 24, build `npm run build`, instalação `npm ci`.
 2. Defina as cinco variáveis por ambiente. Use projetos Supabase separados para preview e produção; não exponha service role em variáveis `NEXT_PUBLIC_`.

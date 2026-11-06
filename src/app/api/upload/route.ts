@@ -65,9 +65,13 @@ export async function POST(request: Request) {
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!key) throw new Error("Storage não configurado");
     // Service role is indispensable here: browsers cannot bypass byte validation with direct Storage writes.
-    const storage = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    }).storage.from("obra-anexos");
+    const storage = createClient(
+      (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)!,
+      key,
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    ).storage.from("obra-anexos");
     const { error: uploadError } = await storage.upload(path, bytes, {
       contentType: mime,
       upsert: false,
