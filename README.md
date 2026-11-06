@@ -86,6 +86,13 @@ O build usa webpack para funcionar também em ambientes que restringem as portas
 
 ## Deploy na Vercel
 
+O repositório inclui `vercel.json` e fixa Node.js 24 em `package.json`. O código do app está na branch `work`; ao importar o repositório, use essa branch no deploy. Se desejar produção a partir dela, ajuste a **Production Branch** em Settings → Git para `work`.
+
+As variáveis do ambiente de desenvolvimento não são copiadas automaticamente para a Vercel. Cadastre as cinco variáveis da tabela em **Project → Settings → Environment Variables**, nos ambientes utilizados (Production e/ou Preview). Para `APP_URL`, use a origem HTTPS do deploy, sem barra final. O callback autorizado no Supabase deve ser essa origem seguida de `/auth/callback`.
+
+Para permitir deploy pela API, configure `VERCEL_TOKEN` como segredo na ferramenta de execução, limitado ao destino `api.vercel.com`. Gere-o em https://vercel.com/account/tokens com acesso à conta/equipe do projeto. Esse token é credencial de deploy; não é uma variável de runtime do app e não deve ser enviado ao navegador ou ao Git. Uma conexão do plugin Vercel disponível nesta conversa também pode fornecer o acesso necessário.
+
+
 1. Envie o projeto para seu repositório e importe na Vercel como Next.js; configure Node 24, build `npm run build`, instalação `npm ci`.
 2. Defina as cinco variáveis por ambiente. Use projetos Supabase separados para preview e produção; não exponha service role em variáveis `NEXT_PUBLIC_`.
 3. Ajuste `APP_URL`, Site URL e redirects do Supabase ao domínio publicado. Cada preview que for usado para login/upload precisa da sua própria configuração de origem.
