@@ -1,0 +1,118 @@
+# SafeObra
+
+Controle de obra em pt-BR, com Next.js App Router, TypeScript, Tailwind e Supabase. Valores persistidos em **centavos**, pesos em pontos-base (10.000 = 100%) e datas civis no fuso `America/Maceio`.
+
+## Executar
+
+Use Node.js 24 e npm. Este checkout já é isolado: trabalhe nele, sem criar worktrees.
+
+```sh
+npm ci
+cp .env.example .env.local
+# Preencha .env.local com as configurações do seu próprio projeto.
+npm run dev
+```
+
+As variáveis do exemplo estão intencionalmente vazias:
+
+| Variável | Uso |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL HTTPS do projeto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública anon do projeto; a proteção é RLS |
+| `SUPABASE_SERVICE_ROLE_KEY` | Exclusivamente servidor: rate limit e upload validado; nunca exponha no navegador |
+| `APP_URL` | Origem canônica da aplicação, sem barra final; usada em callback, convites e validação de origem |
+| `RATE_LIMIT_SALT` | Segredo aleatório de pelo menos 32 bytes, usado para anonimizar as chaves do rate limit |
+
+Gere `RATE_LIMIT_SALT` localmente com um gerenciador de segredos. Não use valores de exemplo como credenciais. Configure os valores na Vercel ou no ambiente seguro; não os envie pelo chat, não os coloque no README ou no Git. Nenhum segredo é necessário para os testes locais isolados.
+
+## Configurar Supabase
+
+1. Crie um projeto Supabase e aplique, **em ordem**, todos os arquivos de `supabase/migrations/` no SQL Editor ou pelo Supabase CLI (`supabase link`, `supabase db push`). Não execute migrations de teste no banco de produção.
+2. Em Authentication → Providers, habilite e-mail/senha e **confirmação de e-mail**. Configure SMTP de produção. O app não habilita Google OAuth nesta versão (opcional no escopo).
+3. Em URL Configuration, informe `APP_URL` como Site URL e permita exatamente `APP_URL/auth/callback` como redirect. Em desenvolvimento, adicione a origem local usada no seu `.env.local`.
+4. Configure os cinco nomes de variáveis acima. A service role fica apenas no servidor. Nenhuma operação administrativa é feita com ela antes da verificação de sessão/permissão, exceto o rate limit anônimo de autenticação.
+5. Reinicie a aplicação. Crie uma conta, confirme o e-mail e crie a primeira obra; o criador vira ADM automaticamente. Convites aceitos exigem e-mail confirmado também no banco.
+6. O bucket `obra-anexos` é criado **privado** pela migration. Não crie policies públicas de escrita: o endpoint de servidor verifica os bytes e grava com a service role; os metadados usam a sessão e RLS. Downloads usam a sessão normal e URLs de 60 segundos.
+
+## Regras financeiras
+
+- Gasto: quantidade × valor unitário, arredondado para centavos pelo PostgreSQL. O total não é fornecido pelo navegador.
+- Empreitada: cadastre serviços com pesos cuja soma seja 100%, depois ative o plano. Os pesos ficam fixos quando ativo para preservar o significado dos avanços históricos.
+- Execução: percentual **acumulado**, entre 0 e 100, sem regressão. O histórico preserva data, autor e observações. Devido = soma do valor de cada serviço × execução; o arredondamento do total acontece uma vez.
+- Adiantamentos por serviço são permitidos mesmo antes de 100%, conforme decisão do usuário. Pagamentos não podem quitar mais que o valor contratado. A interface distingue adiantamento de valor executado.
+- Diária/avulso: cadastre uma contratação com o teto acordado e registre os pagamentos semanais/avulsos; o plano ponderado é específico de empreitadas.
+- Desconto semanal é aplicado no próximo fechamento. Desconto final só é aplicado quando o ADM marca fechamento final. Desconto excedente fica pendente para os fechamentos seguintes, conforme decisão do usuário; nunca produz pagamento líquido negativo.
+- Cada pagamento registra bruto, descontos e líquido. Bruto quita a empreitada; o dinheiro desembolsado é o líquido. As transações travam o contrato para evitar fechamentos concorrentes inconsistentes.
+- Corrigir um pagamento estorna o anterior e cria o novo **na mesma transação**. Um erro desfaz tudo. Estorno restaura os descontos e mantém o lançamento anterior e seus anexos no histórico. Não existe exclusão silenciosa de pagamentos.
+- Gastos e pagamentos são apresentados separadamente para evitar duplicar mão de obra já registrada como gasto. O total de gastos é o livro de gastos, não a soma automática de dois livros que podem representar o mesmo desembolso.
+
+## Módulos e roteiro de teste manual
+
+### 1. Base, auth, convites e RLS
+
+Crie usuários A e B, confirme os e-mails e crie uma obra com A. Gere convite USER para B, aceite em outra sessão e tente reutilizá-lo: deve falhar. Teste expiração e revogação. B deve consultar a obra e não conseguir alterar finanças. Um terceiro usuário sem convite não deve enxergar a obra. O último ADM não pode ser removido.
+
+### 2. Gastos e anexos
+
+Como ADM, registre um gasto de 2 unidades a R$ 25: total R$ 50. Edite, filtre por categoria/período/fornecedor/entrega e exporte os filtros para CSV compatível com Excel (UTF-8 BOM, separador `;`, proteção contra fórmulas). Exclua somente após confirmação. Envie foto, PDF e XML; tente enviar SVG, executável renomeado e arquivo acima do limite. Como USER, tente a mesma escrita via API e diretamente no Supabase: deve falhar.
+
+### 3. Empreitada e pagamentos
+
+Crie contrato de R$ 40.000 e serviços com pesos 60% e 40%. Ative o plano e registre 100% e 50%, respectivamente: executado R$ 32.000 (80%). Registre desconto de R$ 150 e bruto de R$ 100: líquido zero, desconto pendente R$ 50. No próximo bruto de R$ 100: líquido R$ 50. Teste adiantamento, estorno e correção. Compare saldo e auditoria. Plano com pesos incompletos não deve ativar.
+
+### 4. Diário, ocorrências e fotos
+
+USER cria problema, atenção, mudança ou andamento e anexa fotos pela câmera/galeria. Somente ADM altera status e responsável depois de criado. Filtre a galeria por data/serviço, abra fotos e baixe documentos. O histórico financeiro e de ocorrências é registrado em `audit_logs`. As imagens são abertas sob demanda usando URLs assinadas de curta duração.
+
+### 5. Dashboard e relatórios
+
+Compare totais com os lançamentos; verifique gráfico de categorias, próximos serviços, últimos registros e execução ponderada. Abra Relatórios para resumo e últimos sete dias; use Imprimir / PDF para gerar documento pelo navegador e CSV para Excel. Confira versão móvel, tema claro/escuro, estados vazios e mensagens de erro.
+
+## Verificação automatizada
+
+```sh
+npm test              # Cálculos, CSV e validação de entradas; sem rede/banco
+npm run test:db       # PostgreSQL temporário; migrations reais + RLS/RPC
+npm run typecheck
+npm run build
+npm start
+```
+
+`test:db` usa `embedded-postgres` e banco descartável em `/tmp`, porta local 55439. Exige permissão para iniciar processos/portas. Reconstitui contratos mínimos de `auth.uid()`, `auth.users` e Storage para testar SQL real com papéis `authenticated`, `anon`, `service_role`. **Não substitui** validação de Auth, e-mail e Storage no projeto Supabase real. Não aponta para produção. Os dados fictícios existem só nos testes e são removidos ao encerrar.
+
+Os testes de acesso cobrem isolamento da obra, ADM/USER, falsificação de autor, último ADM, convites de uso único, validação dos pesos, rate limit, upload direto proibido, descontos, adiantamentos, correção/estorno e RLS habilitada em todas as tabelas. Nenhuma policy é desativada para fazer os testes passarem.
+
+O build usa webpack para funcionar também em ambientes que restringem as portas internas do Turbopack. A instalação é reproduzida pelo `package-lock.json`.
+
+## Deploy na Vercel
+
+1. Envie o projeto para seu repositório e importe na Vercel como Next.js; configure Node 24, build `npm run build`, instalação `npm ci`.
+2. Defina as cinco variáveis por ambiente. Use projetos Supabase separados para preview e produção; não exponha service role em variáveis `NEXT_PUBLIC_`.
+3. Ajuste `APP_URL`, Site URL e redirects do Supabase ao domínio publicado. Cada preview que for usado para login/upload precisa da sua própria configuração de origem.
+4. Aplique migrations primeiro, faça o deploy e execute o roteiro manual com contas de teste antes de liberar os usuários.
+
+**Uploads: máximo de 4 MiB por arquivo**, escolhido para respeitar o limite de corpo de requisição de 4,5 MB da Vercel Functions. Cada anexo é enviado em uma requisição separada. O app não promete aceitar arquivos de 10 MB nessa hospedagem. Para aumentar, implemente fluxo de quarentena e validação de conteúdo fora da Function antes de ampliar limites. JPG, PNG, WEBP, HEIC/HEIF, PDF e XML são aceitos. HEIC pode exigir download para visualização em navegadores sem suporte. XML é apenas armazenado/baixado; não é interpretado.
+
+## Checklist antes de produção
+
+- [ ] Revisar RLS e grants de todas as migrations, inclusive Storage, e executar testes ADM/USER no Supabase real.
+- [ ] Confirmar e-mail obrigatório, SMTP, URLs exatas de callback, política de senha e rate limits do Supabase Auth.
+- [ ] Confirmar service role só no servidor; verificar artefatos de navegador e habilitar secret scanning no repositório.
+- [ ] HTTPS, CSP com nonce por requisição, HSTS, `nosniff`, bloqueio de iframe e validação de origem do upload funcionando no domínio real.
+- [ ] Conferir `APP_URL`, `RATE_LIMIT_SALT` e ambiente de preview isolado.
+- [ ] Testar limites de upload e conteúdo adulterado; bucket continua privado, sem policies de upload direto.
+- [ ] Confirmar download assinado expira em 60 segundos e membro removido não consegue novos links. Links já emitidos podem durar até expirar.
+- [ ] Definir retenção e backups de dados, auditoria e objetos; revisar restauração. Exclusão de registros financeiros é auditada. Objetos antigos devem ser limpos por rotina administrativa após a retenção definida, nunca tornando o bucket público.
+- [ ] Agendar limpeza das chaves antigas de `rate_limits`, preservando pelo menos a janela atual; monitorar volume e abuso.
+- [ ] Não registrar senhas, tokens de convite nem URLs assinadas em analytics/logs. Fazer revisão de acessibilidade no dispositivo usado no canteiro.
+
+## Organização
+
+- `src/app`: páginas, callback, upload e exportação.
+- `src/components`: formulários e componentes interativos com validação client-side.
+- `src/server`: ações, autorização e rate limit compartilhado no PostgreSQL.
+- `src/lib`: schemas Zod, tipos, cálculos e cliente Supabase de servidor.
+- `supabase/migrations`: tabelas, constraints, índices, transações, auditoria, RLS e Storage.
+- `tests`: testes de cálculo e integração de políticas.
+
+Nenhuma publicação, criação de projeto Supabase ou alteração de credenciais é executada automaticamente pelo código.
