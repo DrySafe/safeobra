@@ -984,7 +984,11 @@ export function ContractWorkboard({
                               {money(Number(item.valor_estimado))}
                             </>
                           ) : source?.calculo ? (
-                            "Total depende da medição"
+                            source.unidade === "diária" ? (
+                              "Total depende da duração"
+                            ) : (
+                              "Total depende da medição"
+                            )
                           ) : item.pesquisado_em ? (
                             "Sem preço comparável encontrado"
                           ) : (
@@ -1003,8 +1007,9 @@ export function ContractWorkboard({
                           )}
                           {source?.calculo && item.valor_estimado === null && (
                             <p className="small muted">
-                              Preço por unidade disponível. Informe a quantidade
-                              e a unidade do serviço para calcular o total.
+                              {source.unidade === "diária"
+                                ? "Diária individual de referência. Informe duração e equipe para calcular o custo do serviço."
+                                : "Preço por unidade disponível. Informe a quantidade e a unidade do serviço para calcular o total."}
                             </p>
                           )}
                           {item.estimado_minimo !== null &&
