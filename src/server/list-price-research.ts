@@ -1,5 +1,6 @@
 import "server-only";
 import { researchServicePrices, AiProviderError } from "./openai-estimator.ts";
+import { reviewServicePrices, applyPriceReview } from "./price-review.ts";
 import type { AiEstimateResult } from "../lib/ai-estimates.ts";
 export const PRICE_LIST_BATCH_SIZE = 8;
 export type PriceListItem = {
@@ -66,7 +67,7 @@ export async function researchServicePriceList({
       "Não foi possível pesquisar os preços agora. Tente novamente.",
     );
   }
-  return pending.map((row, index) =>
+  let prices: PriceListOutcome[] = pending.map((row, index) =>
     row.status === "fulfilled"
       ? { result: { ...row.value, servico: items[index].nome } }
       : {
@@ -76,4 +77,77 @@ export async function researchServicePriceList({
               : "Não foi possível calcular este preço. Tente novamente.",
         },
   );
+  const reviews = await reviewServicePrices({
+    items,
+    prices,
+    key,
+    model,
+    fetcher,
+  });
+  prices = prices.map((row, index) =>
+    row.result ? { result: applyPriceReview(row.result, reviews[index]) } : row,
+  );
+  const retry = prices
+    .map((row, index) => ({ row, index }))
+    .filter(
+      ({ row, index }) =>
+        row.result && !row.result.calculo && reviews[index].profissional,
+    );
+  if (retry.length) {
+    const alternatives = await Promise.allSettled(
+      retry.map(({ index }) =>
+        researchServicePrices({
+          key,
+          model,
+          fetcher,
+          region: "Aracaju/SE",
+          scope: "mao_de_obra",
+          method: "unitario",
+          description: `Pesquise exclusivamente a diária INDIVIDUAL de ${reviews[index].profissional} para usar como referência de mão de obra de: ${items[index].nome}. Não há duração confirmada. Preciso do preço por dia, não do valor total do serviço, salário mensal ou visita técnica.`,
+          budgetInstructions: SERVICE_BUDGET_PROMPT,
+        }),
+      ),
+    );
+    const alternativeItems = retry.map(({ index }) => items[index]);
+    const alternativePrices: PriceListOutcome[] = alternatives.map(
+      (row, index) =>
+        row.status === "fulfilled"
+          ? {
+              result: {
+                ...row.value,
+                servico: alternativeItems[index].nome,
+                quantidade_total: null,
+              },
+            }
+          : {
+              error: "Não foi encontrada diária alternativa para este serviço.",
+            },
+    );
+    const alternativeReviews = await reviewServicePrices({
+      items: alternativeItems,
+      prices: alternativePrices,
+      key,
+      model,
+      fetcher,
+    });
+    for (let n = 0; n < retry.length; n++) {
+      const result = alternativePrices[n].result;
+      if (result) {
+        const checked = applyPriceReview(result, {
+          ...alternativeReviews[n],
+          quantidade_confirmada: false,
+        });
+        if (checked.calculo) {
+          checked.observacoes = (
+            "Referência alternativa por diária individual de " +
+            reviews[retry[n].index].profissional +
+            ". O total depende de duração e equipe. " +
+            checked.observacoes
+          ).slice(0, 1500);
+          prices[retry[n].index] = { result: checked };
+        }
+      }
+    }
+  }
+  return prices;
 }

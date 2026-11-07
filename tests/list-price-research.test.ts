@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { researchServicePriceList } from "../src/server/list-price-research.ts";
+import {
+  applyPriceReview,
+  reviewServicePrices,
+} from "../src/server/price-review.ts";
+import { resolveWebEstimate } from "../src/lib/ai-estimates.ts";
 import { researchedItemTotal } from "../src/lib/contract-items.ts";
 const urls = [
   "https://custos.example.com/reboco",
@@ -88,6 +93,20 @@ function completed(output: unknown, search = false) {
     }),
   );
 }
+function mockReview(payload: { input: string }) {
+  const rows = JSON.parse(payload.input).itens;
+  return completed({
+    resultados: rows.map((r: any) => ({
+      indice: r.indice,
+      referencias_aceitas: (r.pesquisa?.referencias ?? []).map(
+        (_: unknown, n: number) => n,
+      ),
+      quantidade_confirmada: r.pesquisa?.quantidade_total != null,
+      profissional: "",
+      justificativa: "Revisão simulada para verificar integração.",
+    })),
+  });
+}
 const options = { items, key: "test-only-not-real", model: "gpt-4.1-mini" };
 test("lista natural recebe pesquisa própria por serviço e preserva unidade, total e associação", async () => {
   let calls = 0;
@@ -97,6 +116,8 @@ test("lista natural recebe pesquisa própria por serviço e preserva unidade, to
       const payload = JSON.parse(String(init?.body));
       calls++;
       assert.equal(payload.store, false);
+      if (payload.text?.format?.name === "revisao_orcamento")
+        return mockReview(payload);
       const request = JSON.parse(payload.input);
       assert.ok(!String(payload.input).includes("valor_geral"));
       const index = request.pedido.includes("Tomadas") ? 1 : 0;
@@ -111,7 +132,7 @@ test("lista natural recebe pesquisa própria por serviço e preserva unidade, to
       return completed(result(index).pesquisa);
     },
   });
-  assert.equal(calls, 4);
+  assert.equal(calls, 5);
   assert.equal(prices.length, 2);
   assert.equal(prices[0].result?.calculo?.mean, 2500);
   assert.equal(prices[0].result?.calculo?.total, null);
@@ -126,6 +147,8 @@ test("falha de um serviço não elimina preços pesquisados dos outros", async (
     ...options,
     fetcher: async (_url, init) => {
       const payload = JSON.parse(String(init?.body));
+      if (payload.text?.format?.name === "revisao_orcamento")
+        return mockReview(payload);
       if (JSON.parse(payload.input).pedido.includes("Tomadas"))
         return new Response("private error", { status: 500 });
       return payload.tools
@@ -143,8 +166,12 @@ test("fonte não pesquisada não sustenta preço da lista; outros itens continua
   const prices = await researchServicePriceList({
     ...options,
     fetcher: async (_url, init) => {
-      const payload = JSON.parse(String(init?.body)),
-        index = JSON.parse(payload.input).pedido.includes("Tomadas") ? 1 : 0;
+      const payload = JSON.parse(String(init?.body));
+      if (payload.text?.format?.name === "revisao_orcamento")
+        return mockReview(payload);
+      const index = JSON.parse(payload.input).pedido.includes("Tomadas")
+        ? 1
+        : 0;
       return payload.tools
         ? completed("Relatório", true)
         : completed(index ? result(1).pesquisa : bad.pesquisa);
@@ -175,11 +202,121 @@ test("referência por serviço sem quantidade confirmada não vira preço total 
   const prices = await researchServicePriceList({
     ...options,
     items: [items[0]],
-    fetcher: async (_url, init) =>
-      JSON.parse(String(init?.body)).tools
+    fetcher: async (_url, init) => {
+      const payload = JSON.parse(String(init?.body));
+      if (payload.text?.format?.name === "revisao_orcamento")
+        return mockReview(payload);
+      return payload.tools
         ? completed("Relatório", true)
-        : completed(data.pesquisa),
+        : completed(data.pesquisa);
+    },
   });
   assert.equal(prices[0].result?.calculo?.mean, 2500);
   assert.equal(researchedItemTotal(prices[0].result!, items[0]), null);
+});
+test("revisão mantém preço por m² mas remove área assumida a partir de altura não informada", () => {
+  const original = resolveWebEstimate(
+    { ...result(0).pesquisa, quantidade_total: 22.5 },
+    urls,
+    "Aracaju/SE",
+    "mao_de_obra",
+  );
+  const checked = applyPriceReview(original, {
+    indice: 0,
+    referencias_aceitas: [0],
+    quantidade_confirmada: false,
+    profissional: "pedreiro",
+    justificativa: "Altura não foi informada.",
+  });
+  assert.equal(checked.calculo?.mean, 2500);
+  assert.equal(checked.quantidade_total, null);
+  assert.equal(checked.calculo?.total, null);
+  assert.equal(researchedItemTotal(checked, items[0]), null);
+});
+test("revisão recusa custo de outro serviço e procura diária da profissão adequada", async () => {
+  const item = {
+    ...items[0],
+    nome: "Proteção das áreas preservadas",
+    descricao: "Proteger áreas preservadas, área a confirmar",
+  };
+  const prices = await researchServicePriceList({
+    ...options,
+    items: [item],
+    fetcher: async (_url, init) => {
+      const payload = JSON.parse(String(init?.body));
+      if (payload.text?.format?.name === "revisao_orcamento") {
+        const r = JSON.parse(payload.input).itens[0];
+        const isDaily = r.pesquisa?.unidade === "diária";
+        return completed({
+          resultados: [
+            {
+              indice: 0,
+              referencias_aceitas: isDaily ? [0] : [],
+              quantidade_confirmada: false,
+              profissional: "pintor",
+              justificativa: isDaily
+                ? "Diária individual do pintor como referência."
+                : "Assentamento de piso não é proteção de áreas.",
+            },
+          ],
+        });
+      }
+      if (payload.tools) return completed("Relatório", true);
+      if (
+        JSON.parse(payload.input).pedido.includes("DIÁRIA") ||
+        JSON.parse(payload.input).pedido.includes("diária INDIVIDUAL")
+      ) {
+        const data = result(0).pesquisa;
+        return completed({
+          ...data,
+          unidade: "diária",
+          quantidade_total: null,
+          referencias: [
+            {
+              ...data.referencias[0],
+              unidade: "diária",
+              valor_minimo: 20000,
+              valor_maximo: 30000,
+              trecho_preco:
+                "Diária individual de pintor: R$200 a R$300 por dia.",
+            },
+          ],
+        });
+      }
+      return completed(result(0).pesquisa);
+    },
+  });
+  assert.equal(prices[0].result?.unidade, "diária");
+  assert.equal(prices[0].result?.calculo?.mean, 25000);
+  assert.equal(prices[0].result?.calculo?.total, null);
+  assert.match(prices[0].result!.observacoes, /pintor/);
+});
+test("revisão recusa associações repetidas para não validar preço no item errado", async () => {
+  await assert.rejects(
+    reviewServicePrices({
+      ...options,
+      prices: [
+        {
+          result: resolveWebEstimate(
+            result(0).pesquisa,
+            urls,
+            "Aracaju/SE",
+            "mao_de_obra",
+          ),
+        },
+        { error: "Sem fonte" },
+      ],
+      fetcher: async () =>
+        completed({
+          resultados: [0, 0].map((indice) => ({
+            indice,
+            referencias_aceitas: [0],
+            quantidade_confirmada: false,
+            profissional: "",
+            justificativa: "Teste",
+          })),
+        }),
+    }),
+    /conferir o orçamento/,
+  );
 });

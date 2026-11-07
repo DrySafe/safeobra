@@ -16,7 +16,7 @@ import {
   PRICE_LIST_BATCH_SIZE,
 } from "@/server/list-price-research";
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 180;
 export async function POST(request: Request) {
   try {
     if (!isAllowedRequestOrigin(request))
