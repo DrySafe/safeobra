@@ -8,14 +8,12 @@ import {
   resolveAiEstimate,
 } from "@/lib/ai-estimates";
 import type { CostSample } from "@/lib/estimates";
+import { isAllowedRequestOrigin } from "@/server/origin";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 export async function POST(request: Request) {
   try {
-    if (
-      !process.env.APP_URL ||
-      request.headers.get("origin") !== new URL(process.env.APP_URL).origin
-    )
+    if (!isAllowedRequestOrigin(request))
       return NextResponse.json(
         { error: "Origem não autorizada." },
         { status: 403 },

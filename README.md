@@ -125,7 +125,7 @@ Para permitir deploy pela API, configure `VERCEL_TOKEN` como segredo na ferramen
 
 1. Envie o projeto para seu repositório e importe na Vercel como Next.js; configure Node 24, build `npm run build`, instalação `npm ci`.
 2. Defina as cinco variáveis por ambiente. Use projetos Supabase separados para preview e produção; não exponha service role em variáveis `NEXT_PUBLIC_`.
-3. Ajuste `APP_URL`, Site URL e redirects do Supabase ao domínio publicado. Cada preview que for usado para login/upload precisa da sua própria configuração de origem.
+3. Ajuste `APP_URL`, Site URL e redirects do Supabase ao domínio publicado. As rotas de IA e upload aceitam a origem canônica e, na Vercel, os endereços exatos definidos pelo próprio ambiente em `VERCEL_URL`, `VERCEL_BRANCH_URL` e `VERCEL_PROJECT_PRODUCTION_URL`. Outros projetos `*.vercel.app` continuam bloqueados; cabeçalhos Host não ampliam essa lista. Previews precisam de suas próprias variáveis e configuração de callback no Supabase para login por e-mail.
 4. Aplique migrations primeiro, faça o deploy e execute o roteiro manual com contas de teste antes de liberar os usuários.
 
 **Uploads: máximo de 4 MiB por arquivo**, escolhido para respeitar o limite de corpo de requisição de 4,5 MB da Vercel Functions. Cada anexo é enviado em uma requisição separada. O app não promete aceitar arquivos de 10 MB nessa hospedagem. Para aumentar, implemente fluxo de quarentena e validação de conteúdo fora da Function antes de ampliar limites. JPG, PNG, WEBP, HEIC/HEIF, PDF e XML são aceitos. HEIC pode exigir download para visualização em navegadores sem suporte. XML é apenas armazenado/baixado; não é interpretado.

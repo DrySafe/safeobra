@@ -5,13 +5,11 @@ import { randomUUID } from "node:crypto";
 import { access, session } from "@/server/access";
 import { rate } from "@/server/rate";
 import { uploadSchema, MAX_UPLOAD, allowedMime, id } from "@/lib/schemas";
+import { isAllowedRequestOrigin } from "@/server/origin";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
-    if (
-      !process.env.APP_URL ||
-      request.headers.get("origin") !== new URL(process.env.APP_URL).origin
-    )
+    if (!isAllowedRequestOrigin(request))
       return NextResponse.json({ error: "Origem inválida" }, { status: 403 });
     const current = await session();
     await rate("upload", current.user.id, 15);
