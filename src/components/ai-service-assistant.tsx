@@ -4,41 +4,46 @@ import {
   aiEstimateRequestSchema,
   aiEstimateResponseSchema,
   DEFAULT_AI_REGION,
+  priceScopes,
+  scopeLabels,
+  calculateWebPrices,
   type AiEstimateResult,
 } from "@/lib/ai-estimates";
-import { money, dateBR } from "@/lib/finance";
+import { money } from "@/lib/finance";
 import { useReading } from "./navigation";
-
 export function AiServiceAssistant({
   obra,
   enabled,
   admin,
-  canApply,
-  onApply,
 }: {
   obra: string;
   enabled: boolean;
   admin: boolean;
-  canApply: (result: AiEstimateResult) => boolean;
-  onApply: (result: AiEstimateResult) => void;
 }) {
-  const [description, setDescription] = useState("");
-  const [region, setRegion] = useState(DEFAULT_AI_REGION);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<AiEstimateResult | null>(null);
+  const [description, setDescription] = useState(""),
+    [region, setRegion] = useState(DEFAULT_AI_REGION),
+    [scope, setScope] = useState<(typeof priceScopes)[number]>("mao_de_obra"),
+    [pending, setPending] = useState(false),
+    [error, setError] = useState(""),
+    [result, setResult] = useState<AiEstimateResult | null>(null),
+    [quantity, setQuantity] = useState(""),
+    [progress, setProgress] = useState("");
   const active = useRef<AbortController | null>(null);
   useReading(pending);
   useEffect(() => () => active.current?.abort(), []);
+  function invalidate() {
+    setResult(null);
+    setError("");
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
-    setResult(null);
-    setError("");
+    invalidate();
     const parsed = aiEstimateRequestSchema.safeParse({
       obra_id: obra,
       descricao: description,
       regiao: region,
+      escopo: scope,
     });
     if (!parsed.success) {
       setError(
@@ -49,7 +54,7 @@ export function AiServiceAssistant({
     const controller = new AbortController();
     active.current = controller;
     setPending(true);
-    const timer = setTimeout(() => controller.abort(), 30000);
+    const timer = setTimeout(() => controller.abort(), 55000);
     try {
       const response = await fetch("/api/ai/estimate", {
         method: "POST",
@@ -62,16 +67,25 @@ export function AiServiceAssistant({
         setError(
           typeof body.error === "string"
             ? body.error
-            : "Não foi possível analisar o serviço. Tente novamente.",
+            : "Não foi possível pesquisar o preço. Tente novamente.",
         );
         return;
       }
-      const interpreted = aiEstimateResponseSchema.safeParse(body);
-      if (!interpreted.success) throw new Error("Invalid response");
-      setResult(interpreted.data);
+      const researched = aiEstimateResponseSchema.parse(body);
+      setResult(researched);
+      setQuantity(
+        researched.quantidade_total === null
+          ? ""
+          : String(researched.quantidade_total),
+      );
+      setProgress(
+        researched.percentual_executado === null
+          ? ""
+          : String(researched.percentual_executado),
+      );
     } catch {
       setError(
-        "Não foi possível concluir a análise. Verifique a conexão ou use a calculadora abaixo.",
+        "Não foi possível concluir a pesquisa. Verifique a conexão e tente novamente.",
       );
     } finally {
       clearTimeout(timer);
@@ -79,19 +93,34 @@ export function AiServiceAssistant({
       setPending(false);
     }
   }
+  let simulated: ReturnType<typeof calculateWebPrices> | null = null;
+  let simulationError = "";
+  if (result?.referencias.length) {
+    try {
+      simulated = calculateWebPrices(
+        result.referencias,
+        quantity === "" ? null : Number(quantity),
+        progress === "" ? null : Number(progress),
+      );
+    } catch {
+      simulationError =
+        "Informe uma quantidade válida e percentual de 0 a 100, dentro dos limites do calculador.";
+    }
+  }
   return (
     <section className="panel" aria-labelledby="ai-title">
-      <h2 id="ai-title">Estimar com IA</h2>
+      <h2 id="ai-title">Pesquisar preço na internet</h2>
       <p className="muted">
-        Descreva o serviço, a quantidade total e quanto foi realizado. A IA
-        identifica uma referência da sua base; o app calcula a média dos preços
-        cadastrados.
+        Pergunte o preço de um serviço. A IA pesquisa fontes na web, prioriza
+        sua região e mostra os links e a faixa de valores encontrados.
       </p>
       {enabled ? (
         <>
           <form method="post" onSubmit={submit}>
             <div className="field">
-              <label htmlFor="ai-description">O que foi realizado?</label>
+              <label htmlFor="ai-description">
+                Qual preço você quer saber?
+              </label>
               <textarea
                 id="ai-description"
                 required
@@ -100,38 +129,61 @@ export function AiServiceAssistant({
                 rows={4}
                 value={description}
                 disabled={pending}
-                placeholder="Ex.: Reboco de 40 m² no total, com 50% já concluído."
-                onChange={(event) => {
-                  setDescription(event.target.value);
-                  setResult(null);
-                  setError("");
+                placeholder="Ex.: Quanto custa o m² de reboco? Preciso fazer 40 m²."
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  invalidate();
                 }}
               />
             </div>
-            <div className="field">
-              <label htmlFor="ai-region">Cidade / UF</label>
-              <input
-                id="ai-region"
-                required
-                minLength={2}
-                maxLength={120}
-                value={region}
-                disabled={pending}
-                onChange={(event) => {
-                  setRegion(event.target.value);
-                  setResult(null);
-                  setError("");
-                }}
-              />
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="ai-region">Cidade / UF</label>
+                <input
+                  id="ai-region"
+                  required
+                  minLength={2}
+                  maxLength={120}
+                  value={region}
+                  disabled={pending}
+                  onChange={(e) => {
+                    setRegion(e.target.value);
+                    invalidate();
+                  }}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="ai-scope">O preço deve incluir</label>
+                <select
+                  id="ai-scope"
+                  value={scope}
+                  disabled={pending}
+                  onChange={(e) => {
+                    setScope(e.target.value as typeof scope);
+                    invalidate();
+                  }}
+                >
+                  {priceScopes.map((value) => (
+                    <option key={value} value={value}>
+                      {scopeLabels[value]}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <p className="small muted">
-              Ao analisar, a descrição e os nomes, unidades e regiões do
-              catálogo serão enviados à OpenAI. Use apenas informações do
-              serviço.
+              Não precisa cadastrar uma base de preços. A descrição, a região e
+              o tipo de custo serão enviados à OpenAI para a pesquisa.
             </p>
             <button type="submit" disabled={pending}>
-              {pending ? "Analisando serviço…" : "Analisar serviço"}
+              {pending ? "Pesquisando fontes na internet…" : "Pesquisar preço"}
             </button>
+            {pending && (
+              <p className="small muted" role="status">
+                Buscando preços e conferindo as fontes. Isso pode levar alguns
+                segundos.
+              </p>
+            )}
           </form>
           {error && <p role="alert">{error}</p>}
           <div
@@ -141,88 +193,158 @@ export function AiServiceAssistant({
           >
             {result && (
               <>
-                <h3>{result.servico ?? "Precisamos de uma referência"}</h3>
-                {result.quantidade_total !== null && (
-                  <p>
-                    Quantidade total interpretada: {result.quantidade_total}{" "}
-                    {result.unidade}. Execução:{" "}
-                    {result.percentual_executado === null
-                      ? "não informada"
-                      : result.percentual_executado + "%"}
-                    .
-                  </p>
-                )}
-                {result.calculo && (
+                <h3>{result.servico}</h3>
+                <p className="small">
+                  {scopeLabels[result.escopo]} · {result.regiao_contexto}
+                </p>
+                {result.calculo ? (
                   <>
                     <div className="cards estimate-cards">
                       <article className="card">
                         <span className="muted small">
-                          Média por {result.unidade}
+                          Média indicativa por {result.unidade}
                         </span>
                         <div className="value">
                           {money(result.calculo.mean)}
                         </div>
                         <span className="small muted">
-                          {result.calculo.samples} referência(s)
+                          {result.calculo.samples} fonte(s)
                         </span>
                       </article>
                       <article className="card">
                         <span className="muted small">
-                          Estimativa do realizado
+                          Faixa por {result.unidade}
                         </span>
                         <div className="value">
-                          {money(result.calculo.completed)}
-                        </div>
-                      </article>
-                      <article className="card">
-                        <span className="muted small">Estimativa total</span>
-                        <div className="value">
-                          {money(result.calculo.total)}
+                          {money(result.calculo.minimum)} a{" "}
+                          {money(result.calculo.maximum)}
                         </div>
                       </article>
                     </div>
+                    <div className="form-grid">
+                      <div className="field">
+                        <label htmlFor="web-quantity">
+                          Quantidade para calcular ({result.unidade}, opcional)
+                        </label>
+                        <input
+                          id="web-quantity"
+                          type="number"
+                          min="0.0001"
+                          max="1000000"
+                          step="any"
+                          value={quantity}
+                          onChange={(e) => setQuantity(e.target.value)}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="web-progress">
+                          Percentual realizado (%, opcional)
+                        </label>
+                        <input
+                          id="web-progress"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="any"
+                          value={progress}
+                          onChange={(e) => setProgress(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    {simulationError && <p role="status">{simulationError}</p>}
+                    {simulated?.total !== null &&
+                      simulated?.total !== undefined && (
+                        <div className="cards estimate-cards">
+                          <article className="card">
+                            <span className="muted small">
+                              Estimativa total
+                            </span>
+                            <div className="value">
+                              {money(simulated.total)}
+                            </div>
+                            <span className="small muted">
+                              Faixa: {money(simulated.total_minimum!)} a{" "}
+                              {money(simulated.total_maximum!)}
+                            </span>
+                          </article>
+                          {simulated.completed !== null && (
+                            <article className="card">
+                              <span className="muted small">
+                                Estimativa do realizado
+                              </span>
+                              <div className="value">
+                                {money(simulated.completed)}
+                              </div>
+                              <span className="small muted">
+                                {progress}% de {quantity} {result.unidade}
+                              </span>
+                            </article>
+                          )}
+                        </div>
+                      )}
                     <p className="small muted">
-                      Faixa da parte realizada: {money(result.calculo.minimum)}{" "}
-                      a {money(result.calculo.maximum)}. Revise a medição
-                      interpretada. Não altera contratos nem pagamentos.
+                      A média usa o ponto médio da faixa de cada fonte
+                      comparável. É uma referência de mercado; condições da obra
+                      e negociação podem mudar o valor.
                     </p>
-                    {canApply(result) ? (
-                      <button
-                        className="secondary"
-                        type="button"
-                        onClick={() => onApply(result)}
-                      >
-                        Revisar no calculador
-                      </button>
-                    ) : (
-                      <p role="status">
-                        A base foi atualizada. Recarregue a página para revisar
-                        no calculador.
-                      </p>
-                    )}
                   </>
+                ) : (
+                  <p role="status">
+                    A pesquisa não encontrou preços publicados comparáveis com
+                    fonte verificável. Detalhe o tipo de serviço, acabamento e
+                    unidade para tentar novamente.
+                  </p>
                 )}
+                {result.aviso_regional && (
+                  <p className="web-region-note">{result.aviso_regional}</p>
+                )}
+                {result.observacoes && <p>{result.observacoes}</p>}
                 {result.perguntas.map((question) => (
                   <p key={question}>{question}</p>
                 ))}
-                {result.aviso_regional && (
-                  <p className="small">{result.aviso_regional}</p>
-                )}
                 {result.referencias.length > 0 && (
-                  <details>
-                    <summary>Referências usadas</summary>
+                  <div className="web-sources">
+                    <h3>Fontes e preços encontrados</h3>
                     {result.referencias.map((reference) => (
-                      <p key={reference.id} className="small">
-                        {money(reference.valor_unitario)} / {result.unidade} ·{" "}
-                        {reference.fonte} · {reference.regiao} ·{" "}
-                        {dateBR(reference.data_referencia)}
-                      </p>
+                      <article className="web-source" key={reference.url}>
+                        <a
+                          href={reference.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {reference.titulo} ↗
+                        </a>
+                        <p>
+                          <strong>
+                            {money(reference.valor_minimo)}
+                            {reference.valor_maximo !== reference.valor_minimo
+                              ? " a " + money(reference.valor_maximo)
+                              : ""}{" "}
+                            / {reference.unidade}
+                          </strong>
+                        </p>
+                        <p className="small">
+                          {scopeLabels[reference.escopo]} · {reference.regiao}
+                        </p>
+                        <blockquote className="small">
+                          {reference.trecho_preco}
+                        </blockquote>
+                        <p className="small muted">
+                          Data do preço:{" "}
+                          {reference.data_preco ?? "não informada pela fonte"}.
+                        </p>
+                      </article>
                     ))}
-                  </details>
+                  </div>
                 )}
                 <p className="small muted">
-                  Contexto: {result.regiao_contexto}. Sem consulta automática a
-                  preços de mercado.
+                  Pesquisado em{" "}
+                  {new Intl.DateTimeFormat("pt-BR", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                    timeZone: "America/Maceio",
+                  }).format(new Date(result.pesquisado_em))}
+                  . Confirme os preços nos links antes de contratar.
                 </p>
               </>
             )}
@@ -231,8 +353,8 @@ export function AiServiceAssistant({
       ) : (
         <p role="status">
           {admin
-            ? "O assistente aguarda a configuração da IA pelo administrador. A calculadora de referências abaixo já está disponível."
-            : "O assistente de IA ainda não está disponível. Use a calculadora de referências abaixo."}
+            ? "A pesquisa aguarda a configuração da IA pelo administrador."
+            : "A pesquisa de preços ainda não está disponível."}
         </p>
       )}
     </section>

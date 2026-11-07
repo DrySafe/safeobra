@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/supabase/server";
 import { rate } from "@/server/rate";
-import { AiProviderError, interpretService } from "@/server/openai-estimator";
 import {
-  aiEstimateRequestSchema,
-  buildAiGroups,
-  resolveAiEstimate,
-} from "@/lib/ai-estimates";
-import type { CostSample } from "@/lib/estimates";
+  AiProviderError,
+  researchServicePrices,
+} from "@/server/openai-estimator";
+import { aiEstimateRequestSchema } from "@/lib/ai-estimates";
 import { isAllowedRequestOrigin } from "@/server/origin";
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
     if (!isAllowedRequestOrigin(request))
@@ -91,92 +89,13 @@ export async function POST(request: Request) {
         "Limite de análises atingido. Aguarde um minuto para tentar novamente.",
       );
     }
-    const [quotes, stages, contracts] = await Promise.all([
-      client
-        .from("referencias_servicos")
-        .select("id,nome,unidade,valor_unitario,fonte,data_referencia,regiao")
-        .eq("obra_id", input.obra_id)
-        .limit(501),
-      client
-        .from("servicos")
-        .select("id,nome,unidade,quantidade,peso,contrato_id,criado_em")
-        .eq("obra_id", input.obra_id)
-        .eq("percentual_executado", 100)
-        .limit(501),
-      client
-        .from("contratos_mao_de_obra")
-        .select("id,valor_geral")
-        .eq("obra_id", input.obra_id)
-        .eq("plano_ativo", true)
-        .limit(501),
-    ]);
-    if (quotes.error || stages.error || contracts.error)
-      throw new AiProviderError(
-        503,
-        "Não foi possível carregar a base de referências. Tente novamente.",
-      );
-    if ([quotes, stages, contracts].some((result) => result.data!.length > 500))
-      throw new AiProviderError(
-        400,
-        "A base é extensa para esta análise. Use a calculadora de referências.",
-      );
-    const history: CostSample[] = stages.data!.flatMap((stage) => {
-      const contract = contracts.data!.find((c) => c.id === stage.contrato_id);
-      if (!contract || !Number(stage.quantidade)) return [];
-      const price = Math.round(
-        (Number(contract.valor_geral) * stage.peso) /
-          10000 /
-          Number(stage.quantidade),
-      );
-      return price > 0
-        ? [
-            {
-              id: "stage-" + stage.id,
-              nome: stage.nome,
-              unidade: stage.unidade,
-              valor_unitario: price,
-              fonte: "Etapa concluída — valor previsto no contrato",
-              data_referencia: stage.criado_em,
-              regiao: "Obra atual",
-            },
-          ]
-        : [];
+    const result = await researchServicePrices({
+      key,
+      model: process.env.SAFEOBRA_OPENAI_MODEL || "gpt-4.1-mini",
+      description: input.descricao,
+      region: input.regiao,
+      scope: input.escopo,
     });
-    let groups;
-    try {
-      groups = buildAiGroups(
-        [...(quotes.data as CostSample[]), ...history],
-        input.regiao,
-      );
-    } catch {
-      throw new AiProviderError(
-        400,
-        "A base é extensa para esta análise. Use a calculadora de referências.",
-      );
-    }
-    const interpreted = groups.length
-      ? await interpretService({
-          key,
-          model: process.env.SAFEOBRA_OPENAI_MODEL || "gpt-4.1-mini",
-          description: input.descricao,
-          region: input.regiao,
-          groups,
-        })
-      : {
-          grupo_id: null,
-          unidade: null,
-          quantidade_total: null,
-          percentual_executado: null,
-        };
-    let result;
-    try {
-      result = resolveAiEstimate(interpreted, groups, input.regiao);
-    } catch {
-      throw new AiProviderError(
-        502,
-        "A IA não selecionou uma referência válida. Reescreva o pedido.",
-      );
-    }
     return NextResponse.json(result, {
       headers: { "Cache-Control": "private, no-store" },
     });

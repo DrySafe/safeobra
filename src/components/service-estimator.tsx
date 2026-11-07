@@ -97,180 +97,179 @@ export function ServiceEstimator({
         obra={obra}
         enabled={aiEnabled}
         admin={admin}
-        canApply={(result) =>
-          !!result.grupo_key && groups.has(result.grupo_key)
-        }
-        onApply={(result) => {
-          if (!result.grupo_key || !groups.has(result.grupo_key)) return;
-          setSelected(result.grupo_key);
-          setQuantity(String(result.quantidade_total));
-          setProgress(String(result.percentual_executado));
-          document.getElementById("estimate-reference")?.focus();
-        }}
       />
-      <section className="panel">
-        <h2>Quanto vale o serviço realizado?</h2>
-        <p className="muted">
-          Média das cotações e etapas concluídas da obra. Não altera contratos
-          nem pagamentos.
-        </p>
-        {groups.size ? (
-          <>
-            <div className="form-grid">
-              <div className="field">
-                <label htmlFor="estimate-reference">Serviço e referência</label>
-                <select
-                  id="estimate-reference"
-                  value={key}
-                  onChange={(event) => setSelected(event.target.value)}
-                >
-                  {Array.from(groups).map(([group, rows]) => (
-                    <option key={group} value={group}>
-                      {rows[0].nome} · {rows[0].unidade} · {rows[0].regiao}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="estimate-quantity">
-                  Quantidade total ({current[0]?.unidade})
-                </label>
-                <input
-                  id="estimate-quantity"
-                  type="number"
-                  min="0.0001"
-                  max="1000000"
-                  step="any"
-                  value={quantity}
-                  onChange={(event) => setQuantity(event.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="estimate-progress">
-                  Percentual realizado (%)
-                </label>
-                <input
-                  id="estimate-progress"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="any"
-                  value={progress}
-                  onChange={(event) => setProgress(event.target.value)}
-                />
-              </div>
-            </div>
-            {result ? (
-              <div aria-live="polite">
-                <div className="cards estimate-cards">
-                  <article className="card">
-                    <span className="muted small">
-                      Média por {current[0].unidade}
-                    </span>
-                    <div className="value">{money(result.mean)}</div>
-                    <span className="small muted">
-                      {result.samples} referência(s)
-                    </span>
-                  </article>
-                  <article className="card">
-                    <span className="muted small">Estimativa do realizado</span>
-                    <div className="value">{money(result.completed)}</div>
-                    <span className="small muted">
-                      {progress}% de {quantity} {current[0].unidade}
-                    </span>
-                  </article>
-                  <article className="card">
-                    <span className="muted small">Estimativa total</span>
-                    <div className="value">{money(result.total)}</div>
-                    <span className="small muted">
-                      Falta realizar: {money(result.remaining)}
-                    </span>
-                  </article>
-                </div>
-                <p className="small muted">
-                  Faixa observada para a parte realizada:{" "}
-                  {money(result.minimum)} a {money(result.maximum)}. Com uma
-                  única referência, a faixa tem um só valor.
-                </p>
-              </div>
-            ) : (
-              <p role="status">
-                {calculationError ||
-                  "Informe uma quantidade válida e percentual de 0 a 100."}
-              </p>
-            )}
-            <details>
-              <summary>De onde veio essa média?</summary>
-              {current.map((sample) => (
-                <p className="small" key={sample.id}>
-                  <strong>
-                    {money(sample.valor_unitario)} / {sample.unidade}
-                  </strong>{" "}
-                  · {sample.fonte} · {sample.regiao} ·{" "}
-                  {dateBR(sample.data_referencia)}
-                </p>
-              ))}
-              <p className="small muted">
-                Só são agrupadas amostras do mesmo serviço, unidade e região. O
-                valor de contrato de uma etapa concluída é dividido pela
-                quantidade prevista. Não representa uma pesquisa nacional de
-                preços ou o custo efetivamente pago.
-              </p>
-            </details>
-          </>
-        ) : (
-          <p className="empty">
-            Ainda não há preços de referência. Cadastre uma cotação ou conclua
-            uma etapa com quantidade e unidade de medição para começar a formar
-            sua base.
-          </p>
-        )}
-      </section>
-      {admin && (
-        <details className="panel">
-          <summary>+ Cadastrar preço de referência</summary>
-          <DataForm
-            kind="referencias_servicos"
-            obra={obra}
-            fields={fields}
-            title="Salvar referência"
-          />
-          <p className="small muted">
-            Use uma cotação real ou uma composição de custos com fonte e data.
-            Referências de regiões e unidades diferentes não são misturadas.
-          </p>
-        </details>
-      )}
-      <section className="panel">
-        <h2>Base de preços da obra</h2>
-        {references.length ? (
-          references.map((reference) => (
-            <div className="row" key={reference.id}>
-              <div>
-                <strong>{reference.nome}</strong>
-                <p className="small muted">
-                  {money(reference.valor_unitario)} / {reference.unidade} ·{" "}
-                  {reference.regiao}
-                  <br />
-                  {reference.fonte} · {dateBR(reference.data_referencia)}
-                </p>
-              </div>
-              {admin && (
-                <DeleteButton
-                  obra={obra}
-                  entity="referencias_servicos"
-                  id={reference.id}
-                />
-              )}
-            </div>
-          ))
-        ) : (
+      <details className="manual-estimates">
+        <summary className="panel">
+          Opcional: calculadora e referências da obra
+        </summary>
+        <section className="panel">
+          <h2>Calculadora com suas referências</h2>
           <p className="muted">
-            Nenhuma cotação cadastrada. Etapas concluídas entram automaticamente
-            na estimativa, com identificação da origem.
+            Opcional: média das cotações e etapas concluídas da obra. Não altera
+            contratos nem pagamentos.
           </p>
+          {groups.size ? (
+            <>
+              <div className="form-grid">
+                <div className="field">
+                  <label htmlFor="estimate-reference">
+                    Serviço e referência
+                  </label>
+                  <select
+                    id="estimate-reference"
+                    value={key}
+                    onChange={(event) => setSelected(event.target.value)}
+                  >
+                    {Array.from(groups).map(([group, rows]) => (
+                      <option key={group} value={group}>
+                        {rows[0].nome} · {rows[0].unidade} · {rows[0].regiao}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="estimate-quantity">
+                    Quantidade total ({current[0]?.unidade})
+                  </label>
+                  <input
+                    id="estimate-quantity"
+                    type="number"
+                    min="0.0001"
+                    max="1000000"
+                    step="any"
+                    value={quantity}
+                    onChange={(event) => setQuantity(event.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="estimate-progress">
+                    Percentual realizado (%)
+                  </label>
+                  <input
+                    id="estimate-progress"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="any"
+                    value={progress}
+                    onChange={(event) => setProgress(event.target.value)}
+                  />
+                </div>
+              </div>
+              {result ? (
+                <div aria-live="polite">
+                  <div className="cards estimate-cards">
+                    <article className="card">
+                      <span className="muted small">
+                        Média por {current[0].unidade}
+                      </span>
+                      <div className="value">{money(result.mean)}</div>
+                      <span className="small muted">
+                        {result.samples} referência(s)
+                      </span>
+                    </article>
+                    <article className="card">
+                      <span className="muted small">
+                        Estimativa do realizado
+                      </span>
+                      <div className="value">{money(result.completed)}</div>
+                      <span className="small muted">
+                        {progress}% de {quantity} {current[0].unidade}
+                      </span>
+                    </article>
+                    <article className="card">
+                      <span className="muted small">Estimativa total</span>
+                      <div className="value">{money(result.total)}</div>
+                      <span className="small muted">
+                        Falta realizar: {money(result.remaining)}
+                      </span>
+                    </article>
+                  </div>
+                  <p className="small muted">
+                    Faixa observada para a parte realizada:{" "}
+                    {money(result.minimum)} a {money(result.maximum)}. Com uma
+                    única referência, a faixa tem um só valor.
+                  </p>
+                </div>
+              ) : (
+                <p role="status">
+                  {calculationError ||
+                    "Informe uma quantidade válida e percentual de 0 a 100."}
+                </p>
+              )}
+              <details>
+                <summary>De onde veio essa média?</summary>
+                {current.map((sample) => (
+                  <p className="small" key={sample.id}>
+                    <strong>
+                      {money(sample.valor_unitario)} / {sample.unidade}
+                    </strong>{" "}
+                    · {sample.fonte} · {sample.regiao} ·{" "}
+                    {dateBR(sample.data_referencia)}
+                  </p>
+                ))}
+                <p className="small muted">
+                  Só são agrupadas amostras do mesmo serviço, unidade e região.
+                  O valor de contrato de uma etapa concluída é dividido pela
+                  quantidade prevista. Não representa uma pesquisa nacional de
+                  preços ou o custo efetivamente pago.
+                </p>
+              </details>
+            </>
+          ) : (
+            <p className="empty">
+              Ainda não há preços de referência. Cadastre uma cotação ou conclua
+              uma etapa com quantidade e unidade de medição para começar a
+              formar sua base.
+            </p>
+          )}
+        </section>
+        {admin && (
+          <details className="panel">
+            <summary>+ Cadastrar preço de referência</summary>
+            <DataForm
+              kind="referencias_servicos"
+              obra={obra}
+              fields={fields}
+              title="Salvar referência"
+            />
+            <p className="small muted">
+              Use uma cotação real ou uma composição de custos com fonte e data.
+              Referências de regiões e unidades diferentes não são misturadas.
+            </p>
+          </details>
         )}
-      </section>
+        <section className="panel">
+          <h2>Base de preços da obra</h2>
+          {references.length ? (
+            references.map((reference) => (
+              <div className="row" key={reference.id}>
+                <div>
+                  <strong>{reference.nome}</strong>
+                  <p className="small muted">
+                    {money(reference.valor_unitario)} / {reference.unidade} ·{" "}
+                    {reference.regiao}
+                    <br />
+                    {reference.fonte} · {dateBR(reference.data_referencia)}
+                  </p>
+                </div>
+                {admin && (
+                  <DeleteButton
+                    obra={obra}
+                    entity="referencias_servicos"
+                    id={reference.id}
+                  />
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="muted">
+              Nenhuma cotação cadastrada. Etapas concluídas entram
+              automaticamente na estimativa, com identificação da origem.
+            </p>
+          )}
+        </section>
+      </details>
     </>
   );
 }
