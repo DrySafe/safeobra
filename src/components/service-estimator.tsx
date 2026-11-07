@@ -9,18 +9,21 @@ import {
 import { estimationSchema } from "@/lib/schemas";
 import { money, dateBR } from "@/lib/finance";
 import { DataForm, DeleteButton, type Field } from "./forms";
+import { AiServiceAssistant } from "./ai-service-assistant";
 export function ServiceEstimator({
   obra,
   admin,
   samples,
   references,
   categories,
+  aiEnabled,
 }: {
   obra: string;
   admin: boolean;
   samples: CostSample[];
   references: CostSample[];
   categories: string[];
+  aiEnabled: boolean;
 }) {
   const groups = useMemo(() => {
     const map = new Map<string, CostSample[]>();
@@ -77,7 +80,7 @@ export function ServiceEstimator({
       scale: 100,
     },
     { name: "fonte", label: "Fonte / profissional / código da composição" },
-    { name: "regiao", label: "Cidade / UF ou escopo", value: "Obra atual" },
+    { name: "regiao", label: "Cidade / UF ou escopo", value: "Aracaju/SE" },
     {
       name: "data_referencia",
       label: "Data da cotação",
@@ -89,6 +92,22 @@ export function ServiceEstimator({
   ];
   return (
     <>
+      <AiServiceAssistant
+        key={obra}
+        obra={obra}
+        enabled={aiEnabled}
+        admin={admin}
+        canApply={(result) =>
+          !!result.grupo_key && groups.has(result.grupo_key)
+        }
+        onApply={(result) => {
+          if (!result.grupo_key || !groups.has(result.grupo_key)) return;
+          setSelected(result.grupo_key);
+          setQuantity(String(result.quantidade_total));
+          setProgress(String(result.percentual_executado));
+          document.getElementById("estimate-reference")?.focus();
+        }}
+      />
       <section className="panel">
         <h2>Quanto vale o serviço realizado?</h2>
         <p className="muted">

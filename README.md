@@ -49,7 +49,7 @@ As Server Actions do Next.js podem responder HTTP 200 mesmo quando a operação 
 - No celular, o cabeçalho mostra a obra e um menu hambúrguer. O menu reúne os módulos, tema e saída; fecha com toque fora ou Escape. No desktop, o menu lateral continua disponível.
 - A barra animada acompanha navegação, filtros, ações e uploads. Quem prefere movimento reduzido recebe uma barra estática. Cada módulo busca apenas os dados necessários: Gastos lê gastos/anexos; Equipe e convites não lê os oito livros financeiros; a sessão é reaproveitada somente dentro de cada requisição.
 - Em **Gastos → Adicionar gasto**, escolha fotos, PDF ou XML antes de salvar. Os anexos são enviados após a gravação do gasto. Se houver falha, use **Reenviar notas pendentes**, **Substituir notas pendentes** ou **Enviar depois**. Reenviar não cria outro gasto. Em cada lançamento, **Enviar nota fiscal / ver comprovantes** permite continuar depois. O limite continua 4 MiB por arquivo, com validação de bytes no servidor e Storage privado.
-- **Estimativa de serviços** é uma base de referências da própria obra, sem serviço externo de IA. O ADM cadastra cotações com preço por unidade, fonte, região e data. Etapas concluídas entram automaticamente usando o valor previsto no contrato dividido pela quantidade. A média e a faixa observada são calculadas apenas entre o mesmo nome de serviço, unidade e região.
+- **Estimativa de serviços** usa uma base de referências da própria obra e oferece interpretação opcional pela OpenAI. O ADM cadastra cotações com preço por unidade, fonte, região e data. Etapas concluídas entram automaticamente usando o valor previsto no contrato dividido pela quantidade. A média e a faixa observada são calculadas apenas entre o mesmo nome de serviço, unidade e região.
 - Antes de ativar uma empreitada, informe a **unidade de medição** e a **quantidade prevista** de cada serviço. Depois de ativado, pesos e medições ficam fixos para preservar o histórico. Etapas antigas recebem unidade `serviço` e quantidade 1; não são convertidas artificialmente em m².
 - A estimativa é informativa: não muda o valor contratado, execução financeira ou pagamentos. Não inclui uma tabela nacional pré-preenchida, preços inventados ou pesquisa automática de mercado. Uma referência oficial precisa ser cadastrada com UF/região, competência e fonte; obra sem referências mostra estado vazio.
 
@@ -86,6 +86,18 @@ USER cria problema, atenção, mudança ou andamento e anexa fotos pela câmera/
 ### 5. Dashboard e relatórios
 
 Compare totais com os lançamentos; verifique gráfico de categorias, próximos serviços, últimos registros e execução ponderada. Abra Relatórios para resumo e últimos sete dias; use Imprimir / PDF para gerar documento pelo navegador e CSV para Excel. Confira versão móvel, tema claro/escuro, estados vazios e mensagens de erro.
+
+## IA para estimativas (OpenAI)
+
+Em **Estimativas → Estimar com IA**, descreva o serviço, a quantidade total e o percentual concluído. A região inicial é **Aracaju/SE**, editável em cada análise. Exemplo: “Reboco de 40 m² no total, com 50% já concluído”.
+
+Na Vercel → SafeObra → Settings → Environment Variables, cadastre `SAFEOBRA_OPENAI_API_KEY` como **Sensitive**, em **Production**, e faça novo deploy. Use uma chave da API OpenAI com faturamento/créditos disponíveis; a assinatura do ChatGPT não inclui o uso da API. Não use prefixo `NEXT_PUBLIC_`. Opcionalmente, `SAFEOBRA_OPENAI_MODEL` define o modelo; o padrão é `gpt-4.1-mini`, usando Responses API com saída estruturada. A chave nunca é enviada ao navegador. Sem ela, o assistente fica indisponível e a calculadora continua funcionando. A chamada sai do servidor Vercel, sem depender de n8n.
+
+O usuário envia a descrição e o catálogo de nomes, unidades e regiões à OpenAI. Preços, fontes/profissionais, IDs internos, anexos e credenciais não são enviados automaticamente. Use apenas informações do serviço na descrição. A requisição usa `store: false`; isso não substitui as políticas de retenção do provedor.
+
+A IA seleciona um grupo existente e interpreta as medições; o servidor calcula a média em centavos com **todas** as amostras desse mesmo serviço, unidade e região. Não há pesquisa de mercado nem preços gerados pela IA. Cadastre cotações locais reais com fonte e data para formar a base. Referências de Sergipe podem ser usadas com aviso estadual; etapas da obra sem localização registrada exibem aviso para revisão. Regiões diferentes não são agrupadas. Sem referência ou dados suficientes, o app pede complementação. O botão **Revisar no calculador** permite conferir o resultado; a análise não escreve em contratos nem pagamentos.
+
+O endpoint exige sessão e vínculo à obra, valida origem, limita a descrição a 1.600 caracteres e aplica limites de 3 análises/minuto por usuário e 10 por obra. O tempo da chamada ao provedor é limitado a 20 segundos. Catálogos maiores que 500 registros por origem ou 100 grupos são encaminhados à calculadora. Os testes automatizados simulam as respostas OpenAI; a validação real depende da chave e do acesso ao modelo em produção.
 
 ## Verificação automatizada
 

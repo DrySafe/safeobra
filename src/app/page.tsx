@@ -1552,6 +1552,7 @@ export default async function Home({
               samples={[...references, ...historicalSamples]}
               references={references}
               categories={[...categories]}
+              aiEnabled={Boolean(process.env.SAFEOBRA_OPENAI_API_KEY)}
             />
           )}
           {tab === "membros" && (

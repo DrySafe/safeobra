@@ -705,6 +705,9 @@ html[data-theme="dark"] {
   }
 }
 
+.ai-result {
+  margin-top: 24px;
+}
 .field {
   display: grid;
   gap: 7px;

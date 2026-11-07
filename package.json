@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/run.ts",
+    "test": "node --conditions=react-server tests/run.ts",
     "test:db": "node tests/access.test.ts",
     "format": "prettier --write src tests *.ts *.json *.mjs"
   },
