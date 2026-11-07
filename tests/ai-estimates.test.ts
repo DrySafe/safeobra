@@ -189,28 +189,42 @@ test("valores negativos, faixa invertida e data inventada fora do formato são r
     );
 });
 test("OpenAI recebe ferramenta web obrigatória e descrição, sem catálogo ou preços privados", async () => {
+  let calls = 0;
   const result = await researchServicePrices({
     ...options,
     fetcher: async (url, init) => {
+      calls++;
       assert.equal(url, "https://api.openai.com/v1/responses");
       const body = JSON.parse(String(init?.body));
       assert.equal(body.store, false);
-      assert.equal(body.tool_choice, "required");
-      assert.equal(body.tools[0].type, "web_search");
-      assert.equal(body.tools[0].external_web_access, true);
-      assert.equal(body.tools[0].user_location.city, "Aracaju");
-      assert.ok(body.include.includes("web_search_call.action.sources"));
-      assert.equal(body.text.format.strict, true);
-      assert.deepEqual(Object.keys(JSON.parse(body.input)).sort(), [
-        "data_pesquisa",
-        "escopo",
-        "pedido",
-        "regiao",
-      ]);
+      if (calls === 1) {
+        assert.equal(body.tool_choice, "required");
+        assert.equal(body.tools[0].type, "web_search");
+        assert.equal(body.tools[0].external_web_access, true);
+        assert.equal(body.tools[0].user_location.city, "Aracaju");
+        assert.ok(body.include.includes("web_search_call.action.sources"));
+        assert.equal(body.text, undefined);
+        assert.deepEqual(Object.keys(JSON.parse(body.input)).sort(), [
+          "data_pesquisa",
+          "escopo",
+          "pedido",
+          "regiao",
+        ]);
+      } else {
+        assert.equal(body.tools, undefined);
+        assert.equal(body.text.format.strict, true);
+        assert.deepEqual(
+          body.text.format.schema.properties.referencias.items.properties.url
+            .enum,
+          [source.url],
+        );
+        assert.ok(JSON.parse(body.input).relatorio_pesquisa);
+      }
       assert.ok(init?.signal);
       return completed();
     },
   });
+  assert.equal(calls, 2);
   assert.equal(result.calculo?.completed, 50000);
 });
 test("não afirma pesquisa quando a API não executou busca ou a interrompeu", async () => {
@@ -284,4 +298,28 @@ test("erros do provedor e timeout não expõem mensagens privadas", async () => 
     (error: unknown) =>
       error instanceof AiProviderError && error.status === 504,
   );
+});
+
+test("parâmetros de rastreamento não descartam uma fonte pesquisada equivalente", () => {
+  const result = resolveWebEstimate(
+    {
+      ...research,
+      referencias: [{ ...source, url: source.url + "?utm_source=chatgpt.com" }],
+    },
+    [source.url],
+    "Aracaju/SE",
+    "mao_de_obra",
+  );
+  assert.equal(result.status, "estimativa");
+  assert.equal(result.calculo?.mean, 2500);
+});
+test("resumo sem fonte aproveitada não apresenta valores monetários sem referência", () => {
+  const result = resolveWebEstimate(
+    { ...research, observacoes: "O valor é R$ 25,00 sem fonte." },
+    [],
+    "Aracaju/SE",
+    "mao_de_obra",
+  );
+  assert.equal(result.calculo, null);
+  assert.ok(!result.observacoes.includes("25,00"));
 });

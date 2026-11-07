@@ -36,6 +36,10 @@ export function publicSourceUrl(value: string) {
     )
       return null;
     url.hash = "";
+    for (const name of Array.from(url.searchParams.keys())) {
+      if (/^utm_/i.test(name) || ["gclid", "fbclid"].includes(name))
+        url.searchParams.delete(name);
+    }
     return url.href;
   } catch {
     return null;
@@ -197,7 +201,9 @@ export function resolveWebEstimate(
     unidade: data.unidade,
     quantidade_total: data.quantidade_total,
     percentual_executado: data.percentual_executado,
-    observacoes: data.observacoes,
+    observacoes: references.length
+      ? data.observacoes
+      : "Não foi encontrado preço publicado com fonte e composição comparáveis nesta pesquisa.",
     perguntas: questions,
     referencias: references,
     calculo: calculation,
