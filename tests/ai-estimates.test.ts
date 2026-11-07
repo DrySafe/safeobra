@@ -208,7 +208,10 @@ test("OpenAI recebe ferramenta web obrigatória e descrição, sem catálogo ou 
         assert.deepEqual(Object.keys(JSON.parse(body.input)).sort(), [
           "data_pesquisa",
           "escopo",
+          "jornada_horas",
+          "metodo",
           "pedido",
+          "pedreiros",
           "regiao",
         ]);
       } else {

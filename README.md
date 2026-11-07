@@ -101,6 +101,25 @@ Quantidade e percentual podem ser ajustados no resultado para simular total e pa
 
 O endpoint exige sessão, vínculo à obra e origem autorizada. Limites: descrição de 1.600 caracteres, três pesquisas/minuto por usuário e dez por obra, até três chamadas da ferramenta, 45 segundos de espera do provedor e 60 segundos de duração máxima da função. A interface aguarda até 55 segundos. Preços encontrados e disponibilidade dependem das fontes e do acesso do modelo à busca web. Testes automatizados simulam a API; testes reais são executados no deploy usando dados temporários.
 
+## Estimativa por diária, equipe e duração
+
+A pesquisa oferece **Automático**, **Preço por serviço/unidade** e **Diária da equipe e tempo de execução**. No automático, pedidos por m² continuam unitários; uma equipe executando uma lista de tarefas pode usar diária. A diária considera somente mão de obra. Pedreiros podem ser extraídos da descrição ou fixados no formulário; a jornada inicial de 8 h/dia é explícita e editável.
+
+A IA pesquisa a **diária individual de pedreiro** em Aracaju/SE, com as mesmas fontes e controles regionais da pesquisa por unidade. Não usa salário mensal, diária de ajudante ou preço de equipe como diária individual. Decompõe as tarefas e estima intervalos de **horas decorridas para a equipe informada**, considerando as etapas sequenciais e preparação/limpeza quando aplicáveis. Não pressupõe que dois pedreiros façam qualquer tarefa na metade do tempo.
+
+Produtividade publicada precisa de URL retornada pela pesquisa e explicação da aplicação do coeficiente. Sem coeficiente publicado, a duração pode ser uma **estimativa técnica aproximada da IA**, com premissas visíveis. Medidas críticas ausentes geram perguntas e bloqueiam o total por duração, preservando a diária por pessoa/equipe disponível. Porcelanato não informa espessura do contrapiso, existência de laje ou condições do solo; essas condições precisam ser informadas ou identificadas como hipóteses de um cenário preliminar.
+
+O servidor soma os tempos uma única vez e calcula em centavos:
+
+- Dias de trabalho = horas totais da equipe ÷ jornada.
+- Dias inteiros cobrados = arredondamento para cima dos dias totais, **após somar as etapas**.
+- Custo = pedreiros × dias cobrados × diária individual pesquisada.
+- A alternativa proporcional usa a fração dos dias e é apresentada separadamente, sujeita ao acordo com os profissionais.
+
+Duas pessoas trabalhando um dia equivalem a duas diárias individuais. Três pequenas tarefas no mesmo dia não viram três diárias de equipe. Tempos já estimados para a equipe não são divididos novamente pelo número de pedreiros. Mudança de equipe exige nova análise dos tempos. O resultado não registra pagamentos automaticamente.
+
+Exemplo de descrição: “2 pedreiros; retirar porcelanato e escavar 3 furos de 60 × 60 cm por 1 m de profundidade; posicionar as treliças; abrir 3 rasgos de 2 m × 30 cm”. Complete profundidade dos rasgos/espessura da parede, dimensões/preparo das treliças, contrapiso/laje, solo e ferramentas para melhorar a estimativa. Os testes usam valores fictícios para verificar a aritmética; não são cotações de Aracaju.
+
 ## Verificação automatizada
 
 ```sh

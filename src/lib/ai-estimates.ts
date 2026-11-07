@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { serviceUnits } from "./estimates.ts";
+import {
+  dailyPlanSchema,
+  dailyResultSchema,
+  dailyPlanJsonSchema,
+  calculateDailyCost,
+} from "./daily-estimates.ts";
 export const DEFAULT_AI_REGION = "Aracaju/SE";
 export const priceScopes = [
   "mao_de_obra",
@@ -17,8 +23,15 @@ export const aiEstimateRequestSchema = z
     descricao: z.string().trim().min(5).max(1600),
     regiao: z.string().trim().min(2).max(120).default(DEFAULT_AI_REGION),
     escopo: z.enum(priceScopes).default("mao_de_obra"),
+    metodo: z.enum(["automatico", "unitario", "diaria"]).default("automatico"),
+    pedreiros: z.number().int().min(1).max(20).nullable().default(null),
+    jornada_horas: z.number().min(1).max(12).default(8),
   })
-  .strict();
+  .strict()
+  .refine((data) => data.metodo !== "diaria" || data.escopo === "mao_de_obra", {
+    path: ["escopo"],
+    message: "O cálculo por diária considera somente mão de obra.",
+  });
 const measure = z.number().positive().max(1000000).nullable();
 const progress = z.number().min(0).max(100).nullable();
 export function publicSourceUrl(value: string) {
@@ -71,6 +84,8 @@ export type WebReference = z.infer<typeof webReferenceSchema>;
 export const webResearchSchema = z
   .object({
     servico: z.string().trim().min(1).max(240),
+    metodo: z.enum(["unitario", "diaria"]).default("unitario"),
+    diaria: dailyPlanSchema.nullable().default(null),
     unidade: z.enum(serviceUnits).nullable(),
     quantidade_total: measure,
     percentual_executado: progress,
@@ -152,7 +167,9 @@ const calculationSchema = z.object({
   completed: optionalMoney,
 });
 export const aiEstimateResponseSchema = z.object({
-  status: z.enum(["estimativa", "sem_resultados"]),
+  status: z.enum(["estimativa", "sem_resultados", "faltam_dados"]),
+  metodo: z.enum(["unitario", "diaria"]).default("unitario"),
+  diaria: dailyResultSchema.nullable().default(null),
   servico: z.string(),
   regiao_contexto: z.string(),
   escopo: z.enum(priceScopes),
@@ -187,8 +204,14 @@ export function resolveWebEstimate(
   region: string,
   scope: (typeof priceScopes)[number],
   sourceTitles: Record<string, string> = {},
+  dailyOptions: { workers: number | null; hoursPerDay: number } = {
+    workers: null,
+    hoursPerDay: 8,
+  },
 ): AiEstimateResult {
   const data = webResearchSchema.parse(raw);
+  const byDay = data.metodo === "diaria";
+  const unit = byDay ? "diária" : data.unidade;
   const sources = new Set(sourceUrls.map(publicSourceUrl).filter(Boolean));
   const domains = new Set<string>();
   const requested = regionParts(region);
@@ -198,7 +221,7 @@ export function resolveWebEstimate(
       (row) =>
         sources.has(publicSourceUrl(row.url)) &&
         row.escopo === scope &&
-        row.unidade === data.unidade &&
+        row.unidade === unit &&
         row.abrangencia !== "outra_regiao",
     )
     .filter((row) => {
@@ -255,8 +278,8 @@ export function resolveWebEstimate(
     try {
       calculation = calculateWebPrices(
         references,
-        data.quantidade_total,
-        data.percentual_executado,
+        byDay ? null : data.quantidade_total,
+        byDay ? null : data.percentual_executado,
       );
     } catch {
       questions.push(
@@ -265,15 +288,95 @@ export function resolveWebEstimate(
       calculation = calculateWebPrices(references, null, null);
     }
   }
+  let daily = null;
+  if (byDay) {
+    const plan = data.diaria ?? { pedreiros: null, etapas: [], premissas: [] };
+    const workers = dailyOptions.workers ?? plan.pedreiros;
+    const stages = plan.etapas.map((stage) => {
+      if (
+        dailyOptions.workers &&
+        plan.pedreiros &&
+        dailyOptions.workers !== plan.pedreiros
+      )
+        return {
+          ...stage,
+          horas_minimas: null,
+          horas_maximas: null,
+          base_tempo: "faltam_dados" as const,
+          fonte_tempo: null,
+          pendencias: [
+            "Os tempos foram estimados para outra quantidade de pedreiros. Repita a pesquisa com a equipe confirmada.",
+          ],
+        };
+      if (
+        stage.base_tempo === "referencia_publicada" &&
+        (!stage.fonte_tempo || !sources.has(publicSourceUrl(stage.fonte_tempo)))
+      )
+        return {
+          ...stage,
+          horas_minimas: null,
+          horas_maximas: null,
+          base_tempo: "faltam_dados" as const,
+          fonte_tempo: null,
+          pendencias: [
+            ...stage.pendencias,
+            "Falta uma fonte verificável para a produtividade informada.",
+          ],
+        };
+      return {
+        ...stage,
+        fonte_tempo:
+          stage.base_tempo === "referencia_publicada"
+            ? stage.fonte_tempo
+            : null,
+      };
+    });
+    if (!workers)
+      questions.push("Quantos pedreiros vão trabalhar nesta equipe?");
+    if (!stages.length)
+      questions.push("Detalhe as etapas e as medidas para estimar a duração.");
+    let dailyCalculation = null;
+    if (workers && calculation && scope === "mao_de_obra") {
+      try {
+        dailyCalculation = calculateDailyCost({
+          workers,
+          hoursPerDay: dailyOptions.hoursPerDay,
+          stages,
+          rate: calculation,
+        });
+      } catch {
+        questions.push(
+          "Revise os tempos e a equipe: o custo excede os limites.",
+        );
+      }
+    }
+    if (scope !== "mao_de_obra")
+      questions.push(
+        "O cálculo por diária considera apenas mão de obra; selecione essa composição.",
+      );
+    daily = {
+      pedreiros: workers,
+      jornada_horas: dailyOptions.hoursPerDay,
+      etapas: stages,
+      premissas: plan.premissas,
+      calculo: dailyCalculation,
+    };
+  }
   const tier = references[0]?.abrangencia;
   return aiEstimateResponseSchema.parse({
-    status: references.length ? "estimativa" : "sem_resultados",
+    status: references.length
+      ? byDay && daily?.calculo?.total_integral_medio == null
+        ? "faltam_dados"
+        : "estimativa"
+      : "sem_resultados",
+    metodo: data.metodo,
+    diaria: daily,
     servico: data.servico,
     regiao_contexto: region,
     escopo: scope,
-    unidade: data.unidade,
-    quantidade_total: data.quantidade_total,
-    percentual_executado: data.percentual_executado,
+    unidade: unit,
+    quantidade_total: byDay ? null : data.quantidade_total,
+    percentual_executado: byDay ? null : data.percentual_executado,
     observacoes: references.length
       ? references.length === data.referencias.length
         ? data.observacoes
@@ -303,6 +406,8 @@ const object = (properties: Record<string, unknown>) => ({
   properties,
 });
 export const webResearchJsonSchema = object({
+  metodo: { type: "string", enum: ["unitario", "diaria"] },
+  diaria: { anyOf: [dailyPlanJsonSchema, { type: "null" }] },
   servico: { type: "string" },
   unidade: {
     anyOf: [{ type: "string", enum: [...serviceUnits] }, { type: "null" }],

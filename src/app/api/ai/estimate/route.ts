@@ -95,6 +95,9 @@ export async function POST(request: Request) {
       description: input.descricao,
       region: input.regiao,
       scope: input.escopo,
+      method: input.metodo,
+      workers: input.pedreiros,
+      hoursPerDay: input.jornada_horas,
     });
     return NextResponse.json(result, {
       headers: { "Cache-Control": "private, no-store" },

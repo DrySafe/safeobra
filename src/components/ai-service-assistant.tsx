@@ -11,6 +11,7 @@ import {
 } from "@/lib/ai-estimates";
 import { money } from "@/lib/finance";
 import { useReading } from "./navigation";
+import { DailyEstimate } from "./daily-estimate";
 export function AiServiceAssistant({
   obra,
   enabled,
@@ -23,6 +24,11 @@ export function AiServiceAssistant({
   const [description, setDescription] = useState(""),
     [region, setRegion] = useState(DEFAULT_AI_REGION),
     [scope, setScope] = useState<(typeof priceScopes)[number]>("mao_de_obra"),
+    [method, setMethod] = useState<"automatico" | "unitario" | "diaria">(
+      "automatico",
+    ),
+    [workers, setWorkers] = useState(""),
+    [hoursPerDay, setHoursPerDay] = useState("8"),
     [pending, setPending] = useState(false),
     [error, setError] = useState(""),
     [result, setResult] = useState<AiEstimateResult | null>(null),
@@ -44,10 +50,13 @@ export function AiServiceAssistant({
       descricao: description,
       regiao: region,
       escopo: scope,
+      metodo: method,
+      pedreiros: workers === "" ? null : Number(workers),
+      jornada_horas: Number(hoursPerDay),
     });
     if (!parsed.success) {
       setError(
-        "Descreva o serviço em 5 a 1.600 caracteres e informe a cidade/UF.",
+        "Confira a descrição (5 a 1.600 caracteres), cidade/UF, equipe (1 a 20) e jornada (1 a 12 h).",
       );
       return;
     }
@@ -95,7 +104,7 @@ export function AiServiceAssistant({
   }
   let simulated: ReturnType<typeof calculateWebPrices> | null = null;
   let simulationError = "";
-  if (result?.referencias.length) {
+  if (result?.referencias.length && result.metodo !== "diaria") {
     try {
       simulated = calculateWebPrices(
         result.referencias,
@@ -112,7 +121,8 @@ export function AiServiceAssistant({
       <h2 id="ai-title">Pesquisar preço na internet</h2>
       <p className="muted">
         Pergunte o preço de um serviço. A IA pesquisa fontes na web, prioriza
-        sua região e mostra os links e a faixa de valores encontrados.
+        sua região e mostra os links e a faixa de valores encontrados. Também
+        estima equipe, duração e custo por diária.
       </p>
       {enabled ? (
         <>
@@ -136,6 +146,65 @@ export function AiServiceAssistant({
                 }}
               />
             </div>
+            <div className="field">
+              <label htmlFor="ai-method">Como estimar</label>
+              <select
+                id="ai-method"
+                value={method}
+                disabled={pending}
+                onChange={(e) => {
+                  const selected = e.target.value as typeof method;
+                  setMethod(selected);
+                  if (selected === "diaria") setScope("mao_de_obra");
+                  invalidate();
+                }}
+              >
+                <option value="automatico">
+                  Automático: serviço ou diária
+                </option>
+                <option value="unitario">Preço por serviço / unidade</option>
+                <option value="diaria">
+                  Diária da equipe e tempo de execução
+                </option>
+              </select>
+            </div>
+            {method !== "unitario" && (
+              <div className="form-grid">
+                <div className="field">
+                  <label htmlFor="ai-workers">Pedreiros (opcional)</label>
+                  <input
+                    id="ai-workers"
+                    type="number"
+                    min="1"
+                    max="20"
+                    step="1"
+                    value={workers}
+                    disabled={pending}
+                    placeholder="Usar quantidade da descrição"
+                    onChange={(e) => {
+                      setWorkers(e.target.value);
+                      invalidate();
+                    }}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="ai-hours">Jornada (horas por dia)</label>
+                  <input
+                    id="ai-hours"
+                    type="number"
+                    min="1"
+                    max="12"
+                    step="0.5"
+                    value={hoursPerDay}
+                    disabled={pending}
+                    onChange={(e) => {
+                      setHoursPerDay(e.target.value);
+                      invalidate();
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             <div className="form-grid">
               <div className="field">
                 <label htmlFor="ai-region">Cidade / UF</label>
@@ -157,7 +226,7 @@ export function AiServiceAssistant({
                 <select
                   id="ai-scope"
                   value={scope}
-                  disabled={pending}
+                  disabled={pending || method === "diaria"}
                   onChange={(e) => {
                     setScope(e.target.value as typeof scope);
                     invalidate();
@@ -202,7 +271,9 @@ export function AiServiceAssistant({
                     <div className="cards estimate-cards">
                       <article className="card">
                         <span className="muted small">
-                          Média indicativa por {result.unidade}
+                          {result.metodo === "diaria"
+                            ? "Diária média por pedreiro"
+                            : "Média indicativa por " + result.unidade}
                         </span>
                         <div className="value">
                           {money(result.calculo.mean)}
@@ -213,7 +284,9 @@ export function AiServiceAssistant({
                       </article>
                       <article className="card">
                         <span className="muted small">
-                          Faixa por {result.unidade}
+                          {result.metodo === "diaria"
+                            ? "Faixa de diária por pedreiro"
+                            : "Faixa por " + result.unidade}
                         </span>
                         <div className="value">
                           {money(result.calculo.minimum)} a{" "}
@@ -221,67 +294,74 @@ export function AiServiceAssistant({
                         </div>
                       </article>
                     </div>
-                    <div className="form-grid">
-                      <div className="field">
-                        <label htmlFor="web-quantity">
-                          Quantidade para calcular ({result.unidade}, opcional)
-                        </label>
-                        <input
-                          id="web-quantity"
-                          type="number"
-                          min="0.0001"
-                          max="1000000"
-                          step="any"
-                          value={quantity}
-                          onChange={(e) => setQuantity(e.target.value)}
-                        />
-                      </div>
-                      <div className="field">
-                        <label htmlFor="web-progress">
-                          Percentual realizado (%, opcional)
-                        </label>
-                        <input
-                          id="web-progress"
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="any"
-                          value={progress}
-                          onChange={(e) => setProgress(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    {simulationError && <p role="status">{simulationError}</p>}
-                    {simulated?.total !== null &&
-                      simulated?.total !== undefined && (
-                        <div className="cards estimate-cards">
-                          <article className="card">
-                            <span className="muted small">
-                              Estimativa total
-                            </span>
-                            <div className="value">
-                              {money(simulated.total)}
-                            </div>
-                            <span className="small muted">
-                              Faixa: {money(simulated.total_minimum!)} a{" "}
-                              {money(simulated.total_maximum!)}
-                            </span>
-                          </article>
-                          {simulated.completed !== null && (
-                            <article className="card">
-                              <span className="muted small">
-                                Estimativa do realizado
-                              </span>
-                              <div className="value">
-                                {money(simulated.completed)}
-                              </div>
-                              <span className="small muted">
-                                {progress}% de {quantity} {result.unidade}
-                              </span>
-                            </article>
-                          )}
+                    {result.metodo !== "diaria" && (
+                      <>
+                        <div className="form-grid">
+                          <div className="field">
+                            <label htmlFor="web-quantity">
+                              Quantidade para calcular ({result.unidade},
+                              opcional)
+                            </label>
+                            <input
+                              id="web-quantity"
+                              type="number"
+                              min="0.0001"
+                              max="1000000"
+                              step="any"
+                              value={quantity}
+                              onChange={(e) => setQuantity(e.target.value)}
+                            />
+                          </div>
+                          <div className="field">
+                            <label htmlFor="web-progress">
+                              Percentual realizado (%, opcional)
+                            </label>
+                            <input
+                              id="web-progress"
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="any"
+                              value={progress}
+                              onChange={(e) => setProgress(e.target.value)}
+                            />
+                          </div>
                         </div>
-                      )}
+                        {simulationError && (
+                          <p role="status">{simulationError}</p>
+                        )}
+                        {simulated?.total !== null &&
+                          simulated?.total !== undefined && (
+                            <div className="cards estimate-cards">
+                              <article className="card">
+                                <span className="muted small">
+                                  Estimativa total
+                                </span>
+                                <div className="value">
+                                  {money(simulated.total)}
+                                </div>
+                                <span className="small muted">
+                                  Faixa: {money(simulated.total_minimum!)} a{" "}
+                                  {money(simulated.total_maximum!)}
+                                </span>
+                              </article>
+                              {simulated.completed !== null && (
+                                <article className="card">
+                                  <span className="muted small">
+                                    Estimativa do realizado
+                                  </span>
+                                  <div className="value">
+                                    {money(simulated.completed)}
+                                  </div>
+                                  <span className="small muted">
+                                    {progress}% de {quantity} {result.unidade}
+                                  </span>
+                                </article>
+                              )}
+                            </div>
+                          )}
+                      </>
+                    )}
                     <p className="small muted">
                       A média usa o ponto médio da faixa de cada fonte
                       comparável. É uma referência de mercado; condições da obra
@@ -295,6 +375,7 @@ export function AiServiceAssistant({
                     unidade para tentar novamente.
                   </p>
                 )}
+                {result.diaria && <DailyEstimate result={result.diaria} />}
                 {result.aviso_regional && (
                   <p className="web-region-note">{result.aviso_regional}</p>
                 )}
