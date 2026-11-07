@@ -6,7 +6,7 @@ import { rate } from "@/server/rate";
 import { parseContractText } from "@/server/contract-import";
 import { AiProviderError } from "@/server/openai-estimator";
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 export async function POST(request: Request) {
   try {
     if (!isAllowedRequestOrigin(request))

@@ -481,7 +481,7 @@ export function ContractWorkboard({
               Importar serviços de texto com IA (.txt, .md ou .csv)
             </summary>
             <p className="small muted">
-              Texto UTF-8 até 64 KB/16 mil caracteres e 30 serviços por arquivo.
+              Texto UTF-8 até 64 KB/16 mil caracteres e 60 serviços por arquivo.
               A descrição e o preço total da empreitada serão enviados à OpenAI
               para organização. Revise a prévia antes de gravar. As pesquisas de
               mercado são feitas depois, nos itens.
