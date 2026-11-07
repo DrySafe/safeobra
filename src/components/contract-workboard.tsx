@@ -84,6 +84,12 @@ export function ContractWorkboard({
     [importPayments, setImportPayments] = useState(false),
     [paymentDate, setPaymentDate] = useState(today()),
     [wait, setWait] = useState(0),
+    [priceProgress, setPriceProgress] = useState<{
+      done: number;
+      total: number;
+      priced: number;
+      failed: number;
+    } | null>(null),
     [researchStatus, setResearchStatus] = useState<Record<string, string>>({}),
     [selectedPayment, setSelectedPayment] = useState(""),
     [selectedItem, setSelectedItem] = useState(""),
@@ -160,7 +166,7 @@ export function ContractWorkboard({
           : []),
       ]);
       setMessage(
-        "Revise itens, preços, execução e pagamentos antes de salvar. A IA não pesquisou mercado nesta organização.",
+        "Revise os serviços e clique em Salvar e calcular preços da lista. A IA pesquisará uma referência de preço para cada item.",
       );
     } catch (error) {
       setMessage(
@@ -172,7 +178,7 @@ export function ContractWorkboard({
       setBusy(false);
     }
   }
-  function saveDrafts() {
+  function saveDrafts(calculatePrices = false) {
     setMessage("");
     start(async () => {
       try {
@@ -193,6 +199,12 @@ export function ContractWorkboard({
           setDrafts([]);
           setWarnings([]);
           setText("");
+          if (calculatePrices && result.itens?.length)
+            void research(result.itens);
+          else if (calculatePrices)
+            setMessage(
+              "Serviços salvos. Use Calcular preços da lista com IA para continuar a pesquisa.",
+            );
         }
       } catch (error) {
         setMessage(
@@ -210,38 +222,29 @@ export function ContractWorkboard({
     setResearching(true);
     setBusy(true);
     setMessage("");
-    let done = 0;
+    let done = 0,
+      priced = 0,
+      failed = 0;
+    setPriceProgress({ done, priced, failed, total: list.length });
     try {
-      for (const item of list) {
-        if (stop.current) break;
+      for (let offset = 0; offset < list.length && !stop.current; offset += 8) {
+        const group = list.slice(offset, offset + 8);
         let finished = false;
         while (!finished && !stop.current) {
           controller.current = new AbortController();
-          setResearchStatus((s) => ({ ...s, [item.id]: "Pesquisando…" }));
-          const response = await fetch("/api/ai/estimate", {
+          for (const item of group)
+            setResearchStatus((s) => ({
+              ...s,
+              [item.id]: "Calculando preço…",
+            }));
+          const response = await fetch("/api/ai/price-list", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             signal: controller.current.signal,
             body: JSON.stringify({
               obra_id: obra,
               contrato_id: contract.id,
-              item_id: item.id,
-              salvar_estimativa: true,
-              descricao: (
-                item.nome +
-                ". " +
-                item.descricao.slice(0, 1150) +
-                ". Quantidade total prevista: " +
-                item.quantidade +
-                " " +
-                item.unidade +
-                ". Percentual executado: " +
-                item.percentual_executado +
-                "%."
-              ).slice(0, 1600),
-              regiao: "Aracaju/SE",
-              escopo: "mao_de_obra",
-              metodo: "automatico",
+              itens: group.map((i) => i.id),
             }),
           });
           const result = await response.json();
@@ -259,38 +262,68 @@ export function ContractWorkboard({
           }
           if (!response.ok)
             throw new Error(
-              result.error || "Não foi possível pesquisar este item.",
+              result.error ||
+                "Não foi possível calcular os preços deste grupo.",
             );
+          const rows = z
+            .object({
+              resultados: z.array(
+                z.object({
+                  id: z.uuid(),
+                  error: z.string().optional(),
+                  tem_preco: z.boolean().optional(),
+                  tem_total: z.boolean().optional(),
+                }),
+              ),
+            })
+            .parse(result).resultados;
+          if (
+            rows.length !== group.length ||
+            new Set(rows.map((r) => r.id)).size !== group.length ||
+            rows.some((r) => !group.some((i) => i.id === r.id))
+          )
+            throw new Error(
+              "A resposta não corresponde aos serviços selecionados.",
+            );
+          for (const row of rows) {
+            done++;
+            if (row.tem_preco) priced++;
+            if (row.error) failed++;
+            setResearchStatus((s) => ({
+              ...s,
+              [row.id]:
+                row.error ||
+                (row.tem_preco
+                  ? row.tem_total
+                    ? "Preço total calculado"
+                    : "Preço por unidade encontrado; complete a medição"
+                  : "Sem fonte de preço compatível; confira a descrição"),
+            }));
+          }
+          setPriceProgress({ done, priced, failed, total: list.length });
           finished = true;
-          done++;
-          setResearchStatus((s) => ({
-            ...s,
-            [item.id]:
-              result.status === "estimativa"
-                ? "Pesquisa salva"
-                : "Pesquisa salva; confira medidas/fontes",
-          }));
           refresh();
         }
       }
       setMessage(
         stop.current
-          ? `Pesquisa interrompida. ${done} resultado(s) já foram salvos.`
-          : `${done} pesquisa(s) salva(s) na tabela. O preço combinado não foi alterado.`,
+          ? `Orçamento interrompido. ${done} serviço(s) processado(s); resultados salvos na tabela.`
+          : `Orçamento: ${priced}/${list.length} serviço(s) com preço de referência. ${failed ? failed + " item(ns) não puderam ser salvos. " : ""}Confira unidades, medidas pendentes e fontes na tabela.`,
       );
     } catch (error) {
       setMessage(
         stop.current
-          ? "Pesquisa interrompida; resultados concluídos preservados."
+          ? "Orçamento interrompido; resultados concluídos preservados."
           : error instanceof Error
             ? error.message
-            : "Não foi possível concluir a pesquisa.",
+            : "Não foi possível concluir o orçamento.",
       );
     } finally {
       setBusy(false);
       setResearching(false);
       setWait(0);
       controller.current = null;
+      refresh();
     }
   }
   const shown = active.filter(
@@ -405,18 +438,17 @@ export function ContractWorkboard({
               <>
                 <button
                   type="button"
-                  className="secondary"
                   disabled={
                     pending ||
                     busy ||
                     !aiEnabled ||
-                    !active.some((i) => i.valor_estimado === null)
+                    !active.some((i) => !i.estimativa_json?.calculo)
                   }
                   onClick={() =>
-                    research(active.filter((i) => i.valor_estimado === null))
+                    research(active.filter((i) => !i.estimativa_json?.calculo))
                   }
                 >
-                  Pesquisar valores pendentes com IA
+                  Calcular preços da lista com IA
                 </button>
                 <button
                   type="button"
@@ -470,21 +502,41 @@ export function ContractWorkboard({
               </button>
             )}
           </div>
+          {priceProgress && (
+            <div className="notice" role="status">
+              <strong>
+                Orçamento dos serviços: {priceProgress.done}/
+                {priceProgress.total}
+              </strong>
+              <p className="small">
+                {priceProgress.priced} com preço de referência.{" "}
+                {researching
+                  ? "Pesquisando a lista; os preços aparecem por grupo conforme ficam prontos. Mantenha a página aberta."
+                  : "Confira os valores e as unidades na tabela."}
+              </p>
+              <progress
+                aria-label="Serviços com pesquisa processada"
+                max={priceProgress.total}
+                value={priceProgress.done}
+                style={{ width: "100%" }}
+              />
+            </div>
+          )}
           {wait > 0 && (
             <p role="status">
               Limite temporário. A pesquisa continuará em {wait} s. Resultados
               concluídos já estão salvos.
             </p>
           )}
-          <details className="contract-import">
-            <summary>
-              Importar serviços de texto com IA (.txt, .md ou .csv)
-            </summary>
+          <details className="contract-import" open={active.length === 0}>
+            <summary>Orçar lista de serviços com IA — texto ou arquivo</summary>
             <p className="small muted">
               Texto UTF-8 até 64 KB/16 mil caracteres e 60 serviços por arquivo.
-              A descrição e o preço total da empreitada serão enviados à OpenAI
-              para organização. Revise a prévia antes de gravar. As pesquisas de
-              mercado são feitas depois, nos itens.
+              Cole ou descreva os serviços em linguagem natural. A IA identifica
+              os itens e pesquisa o preço de mão de obra em Aracaju/SE após sua
+              revisão. Mostra preço por unidade quando falta medição e total
+              quando há quantidade suficiente. O texto e as descrições são
+              enviados à OpenAI.
             </p>
             <input
               aria-label="Arquivo de serviços"
@@ -499,7 +551,7 @@ export function ContractWorkboard({
                     safeTextFile(new Uint8Array(await file.arrayBuffer())),
                   );
                   setMessage(
-                    "Arquivo carregado. Clique em organizar para revisar a prévia.",
+                    "Arquivo carregado. Clique em Preparar orçamento com IA para revisar os serviços e calcular seus preços.",
                   );
                 } catch (error) {
                   setMessage(
@@ -512,7 +564,7 @@ export function ContractWorkboard({
               }}
             />
             <label>
-              Texto dos serviços
+              Descreva os serviços para calcular os preços
               <textarea
                 value={text}
                 maxLength={16000}
@@ -527,7 +579,7 @@ export function ContractWorkboard({
               disabled={busy || pending || !aiEnabled || text.trim().length < 5}
               onClick={parseText}
             >
-              Organizar texto com IA
+              Preparar orçamento com IA
             </button>
           </details>
           <div ref={editor}>
@@ -803,10 +855,18 @@ export function ContractWorkboard({
                 <div className="inline">
                   <button
                     type="button"
-                    disabled={pending || busy || !drafts.length}
-                    onClick={saveDrafts}
+                    disabled={pending || busy || !drafts.length || !aiEnabled}
+                    onClick={() => saveDrafts(true)}
                   >
-                    Salvar itens revisados
+                    Salvar e calcular preços da lista
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={pending || busy || !drafts.length}
+                    onClick={() => saveDrafts()}
+                  >
+                    Salvar sem pesquisar preços
                   </button>
                   <button
                     type="button"
@@ -915,9 +975,35 @@ export function ContractWorkboard({
                           )}
                         </td>
                         <td data-label="Estimado (mercado)">
-                          {item.valor_estimado === null
-                            ? "A pesquisar / faltam dados"
-                            : money(Number(item.valor_estimado))}
+                          {item.valor_estimado !== null ? (
+                            <>
+                              Total estimado:{" "}
+                              {money(Number(item.valor_estimado))}
+                            </>
+                          ) : source?.calculo ? (
+                            "Total depende da medição"
+                          ) : item.pesquisado_em ? (
+                            "Sem preço comparável encontrado"
+                          ) : (
+                            "Preço a calcular"
+                          )}
+                          {source?.calculo && (
+                            <p className="small">
+                              <strong>
+                                {money(source.calculo.mean)} / {source.unidade}
+                              </strong>
+                              <br />
+                              Faixa unitária: {money(
+                                source.calculo.minimum,
+                              )} a {money(source.calculo.maximum)}
+                            </p>
+                          )}
+                          {source?.calculo && item.valor_estimado === null && (
+                            <p className="small muted">
+                              Preço por unidade disponível. Informe a quantidade
+                              e a unidade do serviço para calcular o total.
+                            </p>
+                          )}
                           {item.estimado_minimo !== null &&
                             item.estimado_maximo !== null && (
                               <p className="small muted">
@@ -991,7 +1077,7 @@ export function ContractWorkboard({
                                 disabled={pending || busy || !aiEnabled}
                                 onClick={() => research([item])}
                               >
-                                Pesquisar valor com IA
+                                Recalcular preço com IA
                               </button>
                               {item.percentual_executado === 0 &&
                                 !allocations.some(

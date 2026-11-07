@@ -8,3 +8,5 @@ import "./origin.test.ts";
 import "./daily-estimates.test.ts";
 
 import "./contract-items.test.ts";
+
+import "./list-price-research.test.ts";

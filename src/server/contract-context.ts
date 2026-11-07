@@ -91,7 +91,6 @@ export async function readContractContext(
   const item = itemId ? (items.find((i) => i.id === itemId) ?? null) : null;
   if (itemId && !item)
     throw new Error("O serviço não pertence à empreitada selecionada.");
-  const row = item ? metrics.rows.find((r) => r.item.id === item.id) : null;
   const context: ContractContext = {
     contrato_id: contractId,
     item_id: item?.id ?? null,
@@ -108,6 +107,19 @@ export async function readContractContext(
       ? metrics.remainingProgress
       : null,
     saldo_a_distribuir: metrics.unassignedGross,
+    item: null,
+  };
+  return { context: contextForItem(context, metrics, item), item, metrics };
+}
+export function contextForItem(
+  base: ContractContext,
+  metrics: ReturnType<typeof contractItemMetrics>,
+  item: ContractItem | null,
+): ContractContext {
+  const row = item ? metrics.rows.find((r) => r.item.id === item.id) : null;
+  return {
+    ...base,
+    item_id: item?.id ?? null,
     item:
       item && row
         ? {
@@ -137,7 +149,6 @@ export async function readContractContext(
           }
         : null,
   };
-  return { context, item, metrics };
 }
 export function contextWithResearch(
   context: ContractContext,

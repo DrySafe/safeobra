@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { access } from "./access";
 import { rate } from "./rate";
-import { contractItemsInput } from "../lib/contract-items";
+import { contractItemsInput, type ContractItem } from "../lib/contract-items";
 import type { Result } from "./actions";
 function message(error: unknown) {
   if (error instanceof z.ZodError)
@@ -55,7 +55,7 @@ export async function saveContractItems(
   obra: string,
   contract: string,
   raw: unknown,
-): Promise<Result> {
+): Promise<Result & { itens?: ContractItem[] }> {
   try {
     z.uuid().parse(contract);
     const input = contractItemsInput.parse(raw);
@@ -75,9 +75,25 @@ export async function saveContractItems(
       p_importar_pagamentos: input.importar_pagamentos,
     });
     databaseError(error);
+    const { data: saved } = await client
+      .from("empreitada_itens")
+      .select("*")
+      .eq("obra_id", obra)
+      .eq("contrato_id", contract)
+      .eq("arquivado", false)
+      .in(
+        "nome",
+        input.itens.map((i) => i.nome),
+      );
     revalidatePath("/");
     return {
       ok: true,
+      itens: input.itens.flatMap((draft) => {
+        const item = saved?.find(
+          (item) => item.nome === draft.nome && item.classe === draft.classe,
+        );
+        return item ? [item as ContractItem] : [];
+      }),
       message: input.importar_pagamentos
         ? "Itens e pagamentos históricos revisados foram registrados."
         : "Serviços salvos. Pagamentos não foram criados.",
