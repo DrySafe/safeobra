@@ -169,6 +169,14 @@ export async function researchServicePriceList({
     if (url) urls.add(url);
   }
   const sources = [...urls].slice(0, 100);
+  console.info(
+    "[ai-list] evidence",
+    JSON.stringify({
+      items: items.length,
+      searches: searches.length,
+      sources: sources.length,
+    }),
+  );
   if (!sources.length)
     return items.map((item) =>
       resolveWebEstimate(
@@ -250,13 +258,29 @@ export async function researchServicePriceList({
       const research = parseWebResearch(
         raw.resultados.find((r) => r.indice === index)!.pesquisa,
       );
-      return resolveWebEstimate(
+      const resolved = resolveWebEstimate(
         research,
         sources,
         "Aracaju/SE",
         "mao_de_obra",
         citations,
       );
+      if (!resolved.calculo)
+        console.info(
+          "[ai-list] missing price",
+          JSON.stringify({
+            indice: index,
+            unit: research.unidade,
+            candidates: research.referencias.length,
+            refs: research.referencias.map((r) => ({
+              unit: r.unidade,
+              scope: r.escopo,
+              region: r.abrangencia,
+              searched: sources.includes(publicSourceUrl(r.url)!),
+            })),
+          }),
+        );
+      return resolved;
     });
   } catch {
     throw new AiProviderError(
