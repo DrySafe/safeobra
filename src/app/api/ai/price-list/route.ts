@@ -146,6 +146,9 @@ export async function POST(request: Request) {
     );
     const saved = await Promise.all(
       items.map(async (item, index) => {
+        const outcome = results[index];
+        if (outcome.error) return { id: item.id, error: outcome.error };
+        const researched = outcome.result!;
         const current = live.metrics.rows.find(
           (r) => r.item.id === item.id,
         )?.item;
@@ -155,11 +158,11 @@ export async function POST(request: Request) {
             error: "Serviço arquivado durante a pesquisa.",
           };
         const result = {
-          ...results[index],
+          ...researched,
           empreitada: contextWithResearch(
             contextForItem(live.context, live.metrics, current),
             current,
-            results[index],
+            researched,
           ),
         };
         const amount = researchedItemTotal(result, current);

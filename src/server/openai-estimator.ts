@@ -31,6 +31,7 @@ export async function researchServicePrices({
   workers = null,
   hoursPerDay = 8,
   contractContext = null,
+  budgetInstructions = "",
 }: {
   key: string;
   model: string;
@@ -42,6 +43,7 @@ export async function researchServicePrices({
   workers?: number | null;
   hoursPerDay?: number;
   contractContext?: ContractContext | null;
+  budgetInstructions?: string;
 }): Promise<AiEstimateResult> {
   if (!key)
     throw new AiProviderError(
@@ -145,7 +147,8 @@ Priorize Aracaju/Sergipe quando essa for a região pedida. Se não achar preço 
 A resposta deve ser uma lista curta de até cinco fontes com LINKS/CITAÇÕES e dados de preço: título, preço ou faixa publicada em R$, unidade, o que inclui, local/abrangência e data do preço se informada. Cada valor precisa de citação da fonte correspondente. Busque especialmente preços por unidade quando o pedido for por m², metro etc. Mão de obra, materiais e material+mão de obra são composições diferentes; procure a composição de escopo e não misture preços de serviços distintos.
 Cite um TRECHO do preço publicado em cada fonte. Não estime preços de memória, não invente preços, não converta moedas ou unidades nem crie fatores regionais. Não apresente referência nacional como preço local. Se faltar preço exato, descreva a ausência. Não calcule a média ou total e não faça perguntas genéricas.
 Quando o método for diaria, pesquise a DIÁRIA DE PEDREIRO POR PROFISSIONAL na região, não um preço de empreitada, equipe, servente/ajudante ou salário mensal. A diária é somente mão de obra. No modo automatico, escolha diária se a pergunta envolver equipe, lista de pequenas tarefas e duração; pergunta por preço por m²/unidade continua unitária. Se escopo incluir materiais, mantenha unitário no modo automático.
-Para diária, pesquise também produtividade/tempo de execução das etapas descritas, inclusive preparação, retirada de porcelanato/contrapiso, escavação, posicionamento das treliças e abertura de rasgos quando aplicáveis. Traga coeficientes publicados se disponíveis, com fontes; não invente um coeficiente SINAPI. Diferencie claramente produtividade publicada de avaliação técnica aproximada sem fonte.`,
+Para diária, pesquise também produtividade/tempo de execução das etapas descritas, inclusive preparação, retirada de porcelanato/contrapiso, escavação, posicionamento das treliças e abertura de rasgos quando aplicáveis. Traga coeficientes publicados se disponíveis, com fontes; não invente um coeficiente SINAPI. Diferencie claramente produtividade publicada de avaliação técnica aproximada sem fonte.
+${budgetInstructions}`,
       input: JSON.stringify(request),
     });
     const searches = search.output.filter(
@@ -241,7 +244,8 @@ Em diaria, decomponha o serviço em etapas, com horas_minimas/horas_maximas de T
 Extraia pedreiros apenas da informação do usuário (o campo explícito tem prioridade); se ausente, null e pergunte. Considere jornada_horas do pedido para planejamento. A produtividade deve respeitar a equipe: dois pedreiros não garantem metade do prazo em todas as tarefas.
 Se houver produtividade publicada no relatório, base_tempo=referencia_publicada e fonte_tempo deve ser uma URL da pesquisa, explicando como quantidade e coeficiente produziram o intervalo de horas. Sem fonte de produtividade, pode fornecer faixa de ESTIMATIVA TÉCNICA aproximada (base_tempo=estimativa_tecnica, fonte_tempo=null), baseada nas medidas e condições informadas. Declare premissas e limitações; não apresente tempo como medido ou como coeficiente oficial.
 Não invente medidas críticas. Ex.: "furar 1 m de chão três vezes" não informa largura, comprimento nem confirma se 1 m é profundidade; sem essas medidas, horas_minimas/horas_maximas=null, base_tempo=faltam_dados e liste pendencias. Para rasgos, confirme quantidade, comprimento, largura e profundidade/espessura da parede. Para treliças, considere quantidade, altura e se já chegam montadas. Porcelanato é acabamento: não deduza espessura do contrapiso, existência de laje, armadura ou dureza do solo. Condições usuais podem ser premissas explícitas de um cenário preliminar, mas sem disfarçar medidas ausentes como fatos.
-Use pendencias SOMENTE para dados indispensáveis ausentes que impedem estimar a etapa: nesses casos, tempos=null e base_tempo=faltam_dados. Não mantenha horas numéricas junto com pendências impeditivas. Riscos usuais e variações de produtividade pertencem às premissas, não a pendencias. Não pergunte novamente condições que o pedido já informou (equipe, acesso, solo, ausência de interferências, descarte etc.). Para condições fornecidas e medidas suficientes, dê faixa técnica aproximada em vez de criar obstáculos genéricos. Se o piso só for removido na projeção dos furos e isso for explicitado, calcule a área pelas dimensões: três furos de 0,60×0,60 m correspondem a 1,08 m² de retirada, sem presumir remoção do piso inteiro. Use premissas para hipóteses de uma estimativa preliminar com intervalo. Limite a até oito etapas, quatro premissas por etapa e quatro pendências curtas por etapa. Não gere valores monetários em diaria: só duração e hipóteses; o preço será calculado no servidor.`,
+Use pendencias SOMENTE para dados indispensáveis ausentes que impedem estimar a etapa: nesses casos, tempos=null e base_tempo=faltam_dados. Não mantenha horas numéricas junto com pendências impeditivas. Riscos usuais e variações de produtividade pertencem às premissas, não a pendencias. Não pergunte novamente condições que o pedido já informou (equipe, acesso, solo, ausência de interferências, descarte etc.). Para condições fornecidas e medidas suficientes, dê faixa técnica aproximada em vez de criar obstáculos genéricos. Se o piso só for removido na projeção dos furos e isso for explicitado, calcule a área pelas dimensões: três furos de 0,60×0,60 m correspondem a 1,08 m² de retirada, sem presumir remoção do piso inteiro. Use premissas para hipóteses de uma estimativa preliminar com intervalo. Limite a até oito etapas, quatro premissas por etapa e quatro pendências curtas por etapa. Não gere valores monetários em diaria: só duração e hipóteses; o preço será calculado no servidor.
+${budgetInstructions}`,
       input: JSON.stringify({
         ...request,
         localizacao_pedido: location,
