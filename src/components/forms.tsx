@@ -86,6 +86,7 @@ export function DataForm({
   const router = useRouter();
   return (
     <form
+      method="post"
       ref={ref}
       onSubmit={(e) => {
         e.preventDefault();
@@ -303,6 +304,7 @@ export function Upload({
   const refresh = useRefresh();
   return (
     <form
+      method="post"
       className="no-print"
       onSubmit={async (e) => {
         e.preventDefault();
