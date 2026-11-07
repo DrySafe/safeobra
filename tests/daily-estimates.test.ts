@@ -286,3 +286,20 @@ test("pesquisa de diária recebe equipe e jornada e retorna planejamento com cus
   assert.equal(result.metodo, "diaria");
   assert.equal(result.diaria?.calculo?.total_integral_medio, 50000);
 });
+
+test("tarifa por hora ou diária da equipe não é tratada como diária individual publicada", () => {
+  for (const trecho of [
+    "R$ 25 por hora, convertido em diária de R$ 200.",
+    "Diária da equipe por R$ 600.",
+    "Salário mensal convertido para diária.",
+  ]) {
+    const result = resolveWebEstimate(
+      { ...research, referencias: [{ ...ref, trecho_preco: trecho }] },
+      [ref.url],
+      "Aracaju/SE",
+      "mao_de_obra",
+    );
+    assert.equal(result.referencias.length, 0);
+    assert.equal(result.diaria?.calculo, null);
+  }
+});

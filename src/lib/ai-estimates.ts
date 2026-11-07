@@ -198,6 +198,15 @@ const locationText = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+export function isIndividualDailyQuote(excerpt: string) {
+  const daily =
+    /\bdi[aá]rias?\b|\bpor dia\b|\/\s*dia\b|\bdia de trabalho\b/i.test(excerpt);
+  const otherBasis =
+    /\bpor hora\b|\/\s*h(?:ora)?\b|\bmensal\b|\bsal[aá]rio\b|\bpor m[eê]s\b|di[aá]ria (?:da|de uma) equipe|por equipe|di[aá]ria para \d+ pedreiros/i.test(
+      excerpt,
+    );
+  return daily && !otherBasis;
+}
 export function resolveWebEstimate(
   raw: unknown,
   sourceUrls: string[],
@@ -222,7 +231,8 @@ export function resolveWebEstimate(
         sources.has(publicSourceUrl(row.url)) &&
         row.escopo === scope &&
         row.unidade === unit &&
-        row.abrangencia !== "outra_regiao",
+        row.abrangencia !== "outra_regiao" &&
+        (unit !== "diária" || isIndividualDailyQuote(row.trecho_preco)),
     )
     .filter((row) => {
       if (row.abrangencia === "nacional")
