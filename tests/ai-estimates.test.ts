@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   aiEstimateRequestSchema,
   webResearchSchema,
+  parseWebResearch,
   resolveWebEstimate,
   calculateWebPrices,
   publicSourceUrl,
@@ -365,4 +366,21 @@ test("referência estadual mantém UF e aviso em vez de virar preço da cidade",
   assert.equal(result.status, "estimativa");
   assert.equal(result.referencias[0].regiao, "SE");
   assert.match(result.aviso_regional!, /estaduais/);
+});
+
+test("referência inválida é descartada sem perder preços válidos e data parcial é preservada", () => {
+  const result = parseWebResearch({
+    ...research,
+    referencias: [
+      { ...source, valor_minimo: 0 },
+      { ...source, data_preco: "2026" },
+    ],
+  });
+  assert.equal(result.referencias.length, 1);
+  assert.equal(result.referencias[0].data_preco, "2026");
+  const unknownDate = parseWebResearch({
+    ...research,
+    referencias: [{ ...source, data_preco: "data indisponível" }],
+  });
+  assert.equal(unknownDate.referencias[0].data_preco, null);
 });

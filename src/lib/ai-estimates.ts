@@ -61,7 +61,7 @@ export const webReferenceSchema = z
     abrangencia: z.enum(["cidade", "estado", "nacional", "outra_regiao"]),
     data_preco: z
       .string()
-      .regex(/^\d{4}-(0[1-9]|1[0-2])(?:-(0[1-9]|[12]\d|3[01]))?$/)
+      .regex(/^\d{4}(?:-(0[1-9]|1[0-2])(?:-(0[1-9]|[12]\d|3[01]))?)?$/)
       .nullable(),
     trecho_preco: z.string().trim().min(5).max(600),
   })
@@ -80,6 +80,28 @@ export const webResearchSchema = z
   })
   .strict();
 export type WebResearch = z.infer<typeof webResearchSchema>;
+export function parseWebResearch(raw: unknown): WebResearch {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    return webResearchSchema.parse(raw);
+  const value = raw as Record<string, unknown>;
+  const references = Array.isArray(value.referencias)
+    ? value.referencias
+        .flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const copy = { ...item };
+          const date = z
+            .string()
+            .regex(/^\d{4}(?:-(0[1-9]|1[0-2])(?:-(0[1-9]|[12]\d|3[01]))?)?$/)
+            .nullable();
+          if (!date.safeParse(copy.data_preco).success) copy.data_preco = null;
+          const parsed = webReferenceSchema.safeParse(copy);
+          return parsed.success ? [parsed.data] : [];
+        })
+        .slice(0, 8)
+    : value.referencias;
+  return webResearchSchema.parse({ ...value, referencias: references });
+}
+
 export const webCalculationInput = z.object({
   quantidade: measure,
   percentual: progress,

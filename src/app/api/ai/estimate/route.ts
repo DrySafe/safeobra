@@ -102,7 +102,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof AiProviderError)
       return NextResponse.json(
-        { error: error.message },
+        { error: error.message, code: error.code },
         {
           status: error.status,
           headers: { "Cache-Control": "private, no-store" },
