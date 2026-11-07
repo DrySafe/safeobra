@@ -773,3 +773,121 @@ html[data-theme="dark"] {
   border-left: 3px solid var(--brand);
   background: var(--bg);
 }
+
+.contract-workboard {
+  margin: 24px 0;
+}
+.contract-tools {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.contract-import,
+.contract-allocation {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.contract-workboard label {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 14px;
+}
+.contract-workboard label.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.contract-drafts fieldset {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 14px 0;
+}
+.contract-filter {
+  max-width: 300px;
+}
+.services-table-wrap {
+  overflow-x: auto;
+}
+.services-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.services-table caption {
+  text-align: left;
+  padding: 12px 0;
+  color: var(--muted);
+}
+.services-table th,
+.services-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 8px;
+  vertical-align: top;
+  text-align: left;
+}
+.services-table td:first-child {
+  min-width: 180px;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
+.services-table td:last-child {
+  min-width: 170px;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
+.services-table td:last-child button {
+  margin: 3px 0;
+}
+.services-table a {
+  text-decoration: underline;
+}
+@media (max-width: 767px) {
+  .services-table,
+  .services-table tbody,
+  .services-table tr {
+    display: block;
+  }
+  .services-table thead {
+    display: none;
+  }
+  .services-table tr {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    margin: 14px 0;
+  }
+  .services-table td {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 0;
+  }
+  .services-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .services-table td:first-child,
+  .services-table td:last-child {
+    display: block;
+    min-width: 0;
+    max-width: none;
+  }
+  .services-table td:first-child::before,
+  .services-table td:last-child::before {
+    display: block;
+    margin-bottom: 8px;
+  }
+  .services-table td p,
+  .services-table td button {
+    grid-column: 2;
+  }
+  .contract-import,
+  .contract-allocation {
+    padding: 12px;
+  }
+}

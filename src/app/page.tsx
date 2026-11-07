@@ -29,6 +29,13 @@ import { money, dateBR, execution, balance } from "@/lib/finance";
 import type * as M from "@/lib/models";
 import { ExpenseCreateForm } from "@/components/expense-form";
 import { ServiceEstimator } from "@/components/service-estimator";
+import { ContractWorkboard } from "@/components/contract-workboard";
+import {
+  contractItemMetrics,
+  type ContractItem,
+  type PaymentAllocation,
+  type ItemExecution,
+} from "@/lib/contract-items";
 import { serviceUnits, type CostSample } from "@/lib/estimates";
 const tabs = [
   ["dashboard", "◫", "Visão geral"],
@@ -252,6 +259,14 @@ export default async function Home({
     ocorrencias: ["dashboard", "diario", "relatorios"].includes(tab),
     anexos: ["gastos", "equipe", "diario"].includes(tab),
     execucoes: tab === "equipe",
+    empreitada_itens: [
+      "dashboard",
+      "equipe",
+      "relatorios",
+      "estimativas",
+    ].includes(tab),
+    pagamento_itens: tab === "equipe",
+    empreitada_execucoes: tab === "equipe",
   };
   const href = (t: string) => `/?obra=${obraId}&tab=${t}`;
   async function all<T>(table: string, columns = "*"): Promise<T[]> {
@@ -296,12 +311,23 @@ export default async function Home({
     all<M.Attachment>("anexos"),
     all<M.Execution>("execucoes"),
   ]);
+  const [contractItems, paymentAllocations, itemExecutions] = await Promise.all(
+    [
+      all<ContractItem>("empreitada_itens"),
+      all<PaymentAllocation>("pagamento_itens"),
+      all<ItemExecution>("empreitada_execucoes"),
+    ],
+  );
   const references =
     tab === "estimativas" ? await all<CostSample>("referencias_servicos") : [];
   const historicalSamples: CostSample[] =
     tab === "estimativas"
       ? stages
-          .filter((stage) => stage.percentual_executado === 100)
+          .filter(
+            (stage) =>
+              stage.percentual_executado === 100 &&
+              !contracts.find((c) => c.id === stage.contrato_id)?.itens_ativo,
+          )
           .flatMap((stage) => {
             const contract = contracts.find(
               (item) => item.id === stage.contrato_id && item.plano_ativo,
@@ -327,30 +353,90 @@ export default async function Home({
               : [];
           })
       : [];
+  if (tab === "estimativas")
+    for (const item of contractItems.filter(
+      (i) =>
+        !i.arquivado &&
+        i.percentual_executado === 100 &&
+        (i.classe === "incluido" || i.aprovado) &&
+        i.valor_cobrado !== null &&
+        Number(i.valor_cobrado) > 0,
+    ))
+      historicalSamples.push({
+        id: "item-" + item.id,
+        nome: item.nome,
+        unidade: item.unidade,
+        valor_unitario: Math.round(
+          Number(item.valor_cobrado) / Number(item.quantidade),
+        ),
+        fonte: "Serviço concluído — parcela do preço contratado",
+        data_referencia: item.criado_em,
+        regiao: "Obra atual",
+      });
   const payments = allPayments.filter((p) => !p.anulado);
   const total = expenses.reduce((s, x) => s + Number(x.valor_total), 0);
-  const totalContract = contracts
-    .filter((x) => x.tipo === "empreitada")
-    .reduce((s, x) => s + Number(x.valor_geral), 0);
-  const paid = payments.reduce((s, x) => s + Number(x.valor), 0);
-  const applied = payments.reduce((s, x) => s + Number(x.desconto), 0);
-  const earned = contracts
-    .filter((c) => c.plano_ativo)
-    .reduce(
-      (sum, c) =>
-        sum +
-        execution(
+  const stats = new Map(
+    contracts.map((c) => {
+      if (c.itens_ativo) {
+        const m = contractItemMetrics(
           Number(c.valor_geral),
-          stages
-            .filter((s) => s.contrato_id === c.id)
-            .map((s) => ({ weight: s.peso, progress: s.percentual_executado })),
-        ).earned,
-      0,
-    );
+          contractItems.filter((i) => i.contrato_id === c.id),
+          payments.filter((p) => p.contrato_id === c.id),
+          paymentAllocations.filter((a) => a.contrato_id === c.id),
+        );
+        return [
+          c.id,
+          {
+            total: m.total,
+            earned: m.earned,
+            progress: m.progress,
+            remaining: m.total - m.earned,
+            progressKnown: m.progressKnown,
+          },
+        ] as const;
+      }
+      const ex = c.plano_ativo
+        ? execution(
+            Number(c.valor_geral),
+            stages
+              .filter((s) => s.contrato_id === c.id)
+              .map((s) => ({
+                weight: s.peso,
+                progress: s.percentual_executado,
+              })),
+          )
+        : { earned: 0, progress: 0, remaining: Number(c.valor_geral) };
+      return [
+        c.id,
+        { ...ex, total: Number(c.valor_geral), progressKnown: c.plano_ativo },
+      ] as const;
+    }),
+  );
+  const totalContract = contracts
+    .filter((c) => c.tipo === "empreitada")
+    .reduce((sum, c) => sum + stats.get(c.id)!.total, 0);
+  const paid = payments.reduce((sum, p) => sum + Number(p.valor), 0),
+    applied = payments.reduce((sum, p) => sum + Number(p.desconto), 0);
+  const earned = contracts.reduce((sum, c) => sum + stats.get(c.id)!.earned, 0);
   const progress = totalContract ? (earned / totalContract) * 100 : 0;
+  const progressKnown = contracts
+    .filter((c) => c.tipo === "empreitada")
+    .every((c) => stats.get(c.id)!.progressKnown);
+  const upcomingStages = [
+    ...stages.filter(
+      (s) => !contracts.find((c) => c.id === s.contrato_id)?.itens_ativo,
+    ),
+    ...contractItems
+      .filter((i) => !i.arquivado && (i.classe === "incluido" || i.aprovado))
+      .map((i) => ({
+        id: i.id,
+        nome: i.nome,
+        percentual_executado: i.percentual_executado,
+      })),
+  ];
   const contractOpts = contracts.map((c) => ({
     value: c.id,
-    label: c.profissional + " · " + money(c.valor_geral),
+    label: c.profissional + " · " + money(stats.get(c.id)!.total),
   }));
   const stageOpts = stages.map((s) => ({ value: s.id, label: s.nome }));
   const occurrenceFields: Field[] = [
@@ -502,7 +588,7 @@ export default async function Home({
                       Math.max(
                         0,
                         contracts.reduce(
-                          (s, c) => s + Number(c.valor_geral),
+                          (s, c) => s + stats.get(c.id)!.total,
                           0,
                         ) -
                           paid -
@@ -513,8 +599,18 @@ export default async function Home({
                 />
                 <Card
                   label="Execução geral"
-                  value={progress.toFixed(1).replace(".", ",") + "%"}
-                  sub={money(earned) + " em serviços executados"}
+                  value={
+                    progressKnown
+                      ? progress.toFixed(1).replace(".", ",") + "%"
+                      : "Plano a completar"
+                  }
+                  sub={
+                    money(earned) +
+                    " em serviços executados" +
+                    (progressKnown
+                      ? " · faltam " + (100 - progress).toFixed(1) + "%"
+                      : " · distribua os valores dos serviços")
+                  }
                 />
               </div>
               <div className="columns">
@@ -546,7 +642,7 @@ export default async function Home({
                       Ver plano ↗
                     </Link>
                   </div>
-                  {stages
+                  {upcomingStages
                     .filter((s) => s.percentual_executado < 100)
                     .slice(0, 5)
                     .map((s) => (
@@ -567,7 +663,7 @@ export default async function Home({
                       Cadastre a empreitada e o plano de serviços.
                     </p>
                   )}
-                  <Progress value={progress} />
+                  {progressKnown && <Progress value={progress} />}
                   <p className="muted small">
                     A execução considera o peso de cada serviço dentro das
                     empreitadas.
@@ -800,17 +896,18 @@ export default async function Home({
                 const ownStages = stages.filter((s) => s.contrato_id === c.id);
                 const cp = payments.filter((p) => p.contrato_id === c.id);
                 const cd = discounts.filter((d) => d.contrato_id === c.id);
-                const ex = c.plano_ativo
-                  ? execution(
-                      Number(c.valor_geral),
-                      ownStages.map((s) => ({
-                        weight: s.peso,
-                        progress: s.percentual_executado,
-                      })),
+                const ownItems = contractItems.filter(
+                  (i) => i.contrato_id === c.id,
+                );
+                const paymentServices = c.itens_ativo
+                  ? ownItems.filter(
+                      (i) =>
+                        !i.arquivado && (i.classe === "incluido" || i.aprovado),
                     )
-                  : { earned: 0, progress: 0, remaining: c.valor_geral };
+                  : ownStages;
+                const ex = stats.get(c.id)!;
                 const b = balance(
-                  Number(c.valor_geral),
+                  ex.total,
                   ex.earned,
                   cp.reduce((s, p) => s + Number(p.valor), 0),
                   cp.reduce((s, p) => s + Number(p.desconto), 0),
@@ -855,14 +952,18 @@ export default async function Home({
                         {c.tipo === "empreitada"
                           ? "Empreitada"
                           : "Diária / avulso"}{" "}
-                        · {money(c.valor_geral)}
+                        · {money(ex.total)}
                       </span>
                     </div>
                     <div className="cards">
                       <Card
                         label="Executado / devido"
                         value={money(ex.earned)}
-                        sub={ex.progress.toFixed(1) + "% do plano"}
+                        sub={
+                          ex.progressKnown
+                            ? ex.progress.toFixed(1) + "% do plano"
+                            : "Distribua o preço entre os serviços"
+                        }
                       />
                       <Card
                         label="Pago (líquido)"
@@ -891,7 +992,7 @@ export default async function Home({
                         }
                       />
                     </div>
-                    <Progress value={ex.progress} />
+                    {ex.progressKnown && <Progress value={ex.progress} />}
                     <Files
                       rows={attachments}
                       obra={obraId}
@@ -900,6 +1001,34 @@ export default async function Home({
                       canUpload={admin}
                     />
                     {c.tipo === "empreitada" && (
+                      <ContractWorkboard
+                        obra={obraId}
+                        contract={c}
+                        items={ownItems}
+                        payments={cp}
+                        allocations={paymentAllocations.filter(
+                          (a) => a.contrato_id === c.id,
+                        )}
+                        executions={itemExecutions.filter((e) =>
+                          ownItems.some((i) => i.id === e.item_id),
+                        )}
+                        admin={admin}
+                        aiEnabled={Boolean(process.env.SAFEOBRA_OPENAI_API_KEY)}
+                      />
+                    )}
+                    {c.itens_ativo && ownStages.length > 0 && (
+                      <details>
+                        <summary>Plano anterior preservado (histórico)</summary>
+                        {ownStages.map((stage) => (
+                          <p className="small" key={stage.id}>
+                            {stage.nome} · peso original {stage.peso / 100}% ·
+                            execução antes da adoção{" "}
+                            {stage.percentual_executado}%
+                          </p>
+                        ))}
+                      </details>
+                    )}
+                    {c.tipo === "empreitada" && !c.itens_ativo && (
                       <>
                         <h3>
                           Plano de serviços · pesos{" "}
@@ -1131,11 +1260,11 @@ export default async function Home({
                                       name: "servico_id",
                                       label: "Serviço",
                                       optional: true,
-                                      options: ownStages.map((s) => ({
+                                      options: paymentServices.map((s) => ({
                                         value: s.id,
                                         label: s.nome,
                                       })),
-                                      value: p.servico_id ?? "",
+                                      value: p.item_id ?? p.servico_id ?? "",
                                     },
                                     { ...date("data", "Data"), value: p.data },
                                     {
@@ -1197,7 +1326,7 @@ export default async function Home({
                             {
                               name: "servico_id",
                               label: "Serviço",
-                              options: ownStages.map((s) => ({
+                              options: paymentServices.map((s) => ({
                                 value: s.id,
                                 label: s.nome,
                               })),
@@ -1475,7 +1604,7 @@ export default async function Home({
                   <Card
                     label="Contratos de mão de obra"
                     value={money(
-                      contracts.reduce((s, c) => s + Number(c.valor_geral), 0),
+                      contracts.reduce((s, c) => s + stats.get(c.id)!.total, 0),
                     )}
                     sub="Empreitadas e diárias"
                   />
@@ -1553,6 +1682,8 @@ export default async function Home({
               references={references}
               categories={[...categories]}
               aiEnabled={Boolean(process.env.SAFEOBRA_OPENAI_API_KEY)}
+              contracts={contracts}
+              contractItems={contractItems.filter((i) => !i.arquivado)}
             />
           )}
           {tab === "membros" && (

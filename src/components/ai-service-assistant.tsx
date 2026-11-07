@@ -12,14 +12,21 @@ import {
 import { money } from "@/lib/finance";
 import { useReading } from "./navigation";
 import { DailyEstimate } from "./daily-estimate";
+import { ContractContextView } from "./contract-context-view";
+import type { Contract } from "@/lib/models";
+import type { ContractItem } from "@/lib/contract-items";
 export function AiServiceAssistant({
   obra,
   enabled,
   admin,
+  contracts,
+  contractItems,
 }: {
   obra: string;
   enabled: boolean;
   admin: boolean;
+  contracts: Contract[];
+  contractItems: ContractItem[];
 }) {
   const [description, setDescription] = useState(""),
     [region, setRegion] = useState(DEFAULT_AI_REGION),
@@ -34,6 +41,8 @@ export function AiServiceAssistant({
     [result, setResult] = useState<AiEstimateResult | null>(null),
     [quantity, setQuantity] = useState(""),
     [progress, setProgress] = useState("");
+  const [contractId, setContractId] = useState(""),
+    [itemId, setItemId] = useState("");
   const active = useRef<AbortController | null>(null);
   useReading(pending);
   useEffect(() => () => active.current?.abort(), []);
@@ -47,6 +56,8 @@ export function AiServiceAssistant({
     invalidate();
     const parsed = aiEstimateRequestSchema.safeParse({
       obra_id: obra,
+      contrato_id: contractId || null,
+      item_id: itemId || null,
       descricao: description,
       regiao: region,
       escopo: scope,
@@ -127,6 +138,81 @@ export function AiServiceAssistant({
       {enabled ? (
         <>
           <form method="post" onSubmit={submit}>
+            {contracts.length > 0 && (
+              <div className="form-grid">
+                <div className="field">
+                  <label htmlFor="ai-contract">
+                    Empreitada para comparar (opcional)
+                  </label>
+                  <select
+                    id="ai-contract"
+                    value={contractId}
+                    disabled={pending}
+                    onChange={(e) => {
+                      setContractId(e.target.value);
+                      setItemId("");
+                      if (e.target.value) setScope("mao_de_obra");
+                      invalidate();
+                    }}
+                  >
+                    <option value="">Pesquisa avulsa</option>
+                    {contracts
+                      .filter((c) => c.tipo === "empreitada")
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.profissional} · original{" "}
+                          {money(Number(c.valor_geral))}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                {contractId && (
+                  <div className="field">
+                    <label htmlFor="ai-contract-item">
+                      Serviço da empreitada
+                    </label>
+                    <select
+                      id="ai-contract-item"
+                      value={itemId}
+                      disabled={pending}
+                      onChange={(e) => {
+                        setItemId(e.target.value);
+                        const item = contractItems.find(
+                          (i) => i.id === e.target.value,
+                        );
+                        if (item)
+                          setDescription(
+                            (
+                              item.nome +
+                              ". " +
+                              item.descricao.slice(0, 1100) +
+                              ". Quantidade: " +
+                              item.quantidade +
+                              " " +
+                              item.unidade +
+                              ". Executado: " +
+                              item.percentual_executado +
+                              "%."
+                            ).slice(0, 1600),
+                          );
+                        invalidate();
+                      }}
+                    >
+                      <option value="">
+                        Somente contexto geral do contrato
+                      </option>
+                      {contractItems
+                        .filter((i) => i.contrato_id === contractId)
+                        .map((i) => (
+                          <option key={i.id} value={i.id}>
+                            {i.nome}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="field">
               <label htmlFor="ai-description">
                 Qual preço você quer saber?
@@ -226,7 +312,7 @@ export function AiServiceAssistant({
                 <select
                   id="ai-scope"
                   value={scope}
-                  disabled={pending || method === "diaria"}
+                  disabled={pending || method === "diaria" || !!contractId}
                   onChange={(e) => {
                     setScope(e.target.value as typeof scope);
                     invalidate();
@@ -376,6 +462,9 @@ export function AiServiceAssistant({
                   </p>
                 )}
                 {result.diaria && <DailyEstimate result={result.diaria} />}
+                {result.empreitada && (
+                  <ContractContextView context={result.empreitada} />
+                )}
                 {result.aviso_regional && (
                   <p className="web-region-note">{result.aviso_regional}</p>
                 )}

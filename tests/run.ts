@@ -6,3 +6,5 @@ import "./ai-estimates.test.ts";
 import "./origin.test.ts";
 
 import "./daily-estimates.test.ts";
+
+import "./contract-items.test.ts";

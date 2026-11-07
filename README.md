@@ -91,7 +91,7 @@ Compare totais com os lançamentos; verifique gráfico de categorias, próximos 
 
 Em **Estimativas → Pesquisar preço na internet**, pergunte o valor do serviço. Não é necessário cadastrar uma base. A região inicial é **Aracaju/SE**, editável. Selecione **Somente mão de obra**, **Material e mão de obra** ou **Somente materiais** para não misturar composições. Exemplo: “Quanto custa reboco por m²? Preciso fazer 40 m²”. Uma pergunta por unidade pode ser respondida sem informar quantidade ou execução.
 
-Na Vercel, use `SAFEOBRA_OPENAI_API_KEY` como **Sensitive**, em **Production**, seguida de novo deploy. A chave fica apenas no servidor. `SAFEOBRA_OPENAI_MODEL` é opcional (padrão `gpt-4.1-mini`) e deve aceitar Responses API, busca web e saída estruturada. A API e as buscas usam o faturamento OpenAI; não estão incluídas na assinatura ChatGPT. A integração não depende de n8n. A descrição, a região e o escopo são enviados à OpenAI; dados e preços cadastrados na obra não são enviados. A requisição usa `store: false`.
+Na Vercel, use `SAFEOBRA_OPENAI_API_KEY` como **Sensitive**, em **Production**, seguida de novo deploy. A chave fica apenas no servidor. `SAFEOBRA_OPENAI_MODEL` é opcional (padrão `gpt-4.1-mini`) e deve aceitar Responses API, busca web e saída estruturada. A API e as buscas usam o faturamento OpenAI; não estão incluídas na assinatura ChatGPT. A integração não depende de n8n. A descrição, a região e o escopo são enviados à OpenAI. Ao vincular uma empreitada, o contexto numérico do contrato e do serviço é usado para comparação; o livro financeiro detalhado e o nome do profissional não são enviados. A requisição usa `store: false`.
 
 A pesquisa usa duas etapas no servidor: primeiro busca na web com citações nativas, depois extrai os preços desse relatório em campos estruturados, limitando as URLs às fontes retornadas pela busca. A ferramenta `web_search` tem acesso externo habilitado e seu uso é obrigatório. O servidor exige uma busca concluída e só aceita URLs que apareçam nas fontes/citações da resposta da ferramenta. A IA extrai preços publicados em BRL, unidade, composição, região, data do preço quando informada e trecho do valor. Não deve inventar preços, converter unidades ou aplicar fatores regionais sem fonte. A existência da URL na pesquisa não substitui a conferência do conteúdo pelo usuário.
 
@@ -119,6 +119,28 @@ O servidor soma os tempos uma única vez e calcula em centavos:
 Duas pessoas trabalhando um dia equivalem a duas diárias individuais. Três pequenas tarefas no mesmo dia não viram três diárias de equipe. Tempos já estimados para a equipe não são divididos novamente pelo número de pedreiros. Mudança de equipe exige nova análise dos tempos. O resultado não registra pagamentos automaticamente.
 
 Exemplo de descrição: “2 pedreiros; retirar porcelanato e escavar 3 furos de 60 × 60 cm por 1 m de profundidade; posicionar as treliças; abrir 3 rasgos de 2 m × 30 cm”. Complete profundidade dos rasgos/espessura da parede, dimensões/preparo das treliças, contrapiso/laje, solo e ferramentas para melhorar a estimativa. Os testes usam valores fictícios para verificar a aritmética; não são cotações de Aracaju.
+
+## Tabela de serviços da empreitada e IA
+
+Em **Empreitada**, cada contrato oferece **Serviços, estimativas e saldo da empreitada**. A tabela mostra itens a realizar, em andamento e concluídos, classificação incluído/extra, avanço, estimativa de mercado, valor cobrado/alocado, pago líquido e saldo. No celular, as linhas viram cartões. ADM adiciona/edita itens, registra conclusão, pesquisa preços, aprova extras e vincula pagamentos. USER consulta.
+
+O preço original continua preservado. Os itens incluídos distribuem esse preço, sem somá-lo de novo; sua soma não pode ultrapassá-lo. Extras só aumentam o total quando explicitamente aprovados com valor. O avanço usa valores combinados/alocados × execução de cada serviço, incluindo extras aprovados. Valores ainda não distribuídos mantêm o plano incompleto. Concluir serviço atualiza avanço e restante, sem criar pagamento.
+
+**Organizar plano atual nesta tabela** importa os serviços do plano antigo, preserva seus IDs e aproveita pagamentos por serviço. O plano anterior fica como histórico imutável. Pagamentos semanais/adiantamentos sem vínculo ficam **a distribuir**: reduzem o saldo geral, mas não aparecem ficticiamente como pagos em um item. A distribuição limita bruto, descontos e líquido ao pagamento real, não cria dinheiro nem novas transações. Estornos deixam de compor o pago dos itens e restauram os descontos conforme as regras existentes.
+
+A tabela pesquisa cada item ou enfileira os que estão sem estimativa. A fila respeita o limite de três pesquisas por minuto, pode ser interrompida e salva cada resultado concluído. Mantenha a página aberta durante a fila. O resultado considera o total atual da empreitada, a parcela e o avanço do item e os pagamentos reais. A busca de mercado é independente do orçamento: o preço combinado não serve como fonte de preço. O contexto numérico é usado na comparação; IDs internos e nome do profissional não são enviados à IA de pesquisa. A referência de pagamento pelo executado é calculada no servidor a partir do contrato, não inventada pelo modelo. A comparação não muda preço ou pagamento automaticamente.
+
+**Sugerir distribuição do preço original** propõe parcelas proporcionais às estimativas de todos os itens incluídos. Exige referências completas, preserva cada centavo e apresenta prévia para revisão. Alterar descrição, quantidade ou unidade invalida a pesquisa anterior. Se o serviço mudar enquanto a IA pesquisa, o resultado não sobrescreve o novo escopo.
+
+Na aba **Estimativa de serviços**, é possível selecionar empreitada e serviço para comparar com o orçamento e o que já foi pago. Uma pesquisa avulsa não é confundida com o valor da empreitada inteira.
+
+### Arquivo de texto
+
+O ADM pode carregar `.txt`, `.md` ou `.csv` em UTF-8 (até 64 KB, 16 mil caracteres e 30 serviços por arquivo), ou colar o texto. A IA recebe esse texto e o preço original para organizar dados, não para inventar estimativas de mercado. Os itens, medidas, valores, execução e pagamentos citados aparecem em prévia editável. Extras começam sem aprovação. Nada é gravado até **Salvar itens revisados**.
+
+Pagamentos citados só viram lançamentos se o ADM marcar **Registrar os pagamentos históricos informados** e conferir a data. São registrados como líquidos históricos sem aplicar automaticamente descontos pendentes. Marque apenas se não constarem no histórico; pagamentos de itens já existentes não são reimportados. Lotes têm chave de idempotência e itens não podem repetir nome/classificação na mesma empreitada. Sem marcar, os valores informados não criam pagamento. O arquivo original não vai para um bucket público: o texto é processado e os dados estruturados são guardados nas tabelas privadas da obra.
+
+Migração: `202611070002_contract_items.sql`. Tabelas novas têm RLS, leitura por membros e mutações por funções que exigem ADM; gravação de pesquisa da IA é exclusiva do servidor. As regras legadas de pagamentos/descontos continuam compatíveis para contratos ainda não convertidos. A adoção e os eventos de itens/pagamentos têm auditoria.
 
 ## Verificação automatizada
 

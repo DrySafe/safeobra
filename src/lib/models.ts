@@ -22,6 +22,7 @@ export type Contract = Base & {
   profissional: string;
   valor_geral: number;
   plano_ativo: boolean;
+  itens_ativo: boolean;
 };
 export type Stage = Base & {
   contrato_id: string;
@@ -38,6 +39,7 @@ export type Payment = Base & {
   contrato_id: string;
   anulado: boolean;
   servico_id: string | null;
+  item_id: string | null;
   data: string;
   valor_bruto: number;
   desconto: number;

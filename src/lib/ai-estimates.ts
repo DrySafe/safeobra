@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { contractContextSchema } from "./contract-context.ts";
 import { serviceUnits } from "./estimates.ts";
 import {
   dailyPlanSchema,
@@ -20,6 +21,9 @@ export const scopeLabels = {
 export const aiEstimateRequestSchema = z
   .object({
     obra_id: z.uuid(),
+    contrato_id: z.uuid().nullable().default(null),
+    item_id: z.uuid().nullable().default(null),
+    salvar_estimativa: z.boolean().default(false),
     descricao: z.string().trim().min(5).max(1600),
     regiao: z.string().trim().min(2).max(120).default(DEFAULT_AI_REGION),
     escopo: z.enum(priceScopes).default("mao_de_obra"),
@@ -167,6 +171,7 @@ const calculationSchema = z.object({
   completed: optionalMoney,
 });
 export const aiEstimateResponseSchema = z.object({
+  empreitada: contractContextSchema.nullable().default(null),
   status: z.enum(["estimativa", "sem_resultados", "faltam_dados"]),
   metodo: z.enum(["unitario", "diaria"]).default("unitario"),
   diaria: dailyResultSchema.nullable().default(null),

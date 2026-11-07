@@ -10,6 +10,8 @@ import { estimationSchema } from "@/lib/schemas";
 import { money, dateBR } from "@/lib/finance";
 import { DataForm, DeleteButton, type Field } from "./forms";
 import { AiServiceAssistant } from "./ai-service-assistant";
+import type { Contract } from "@/lib/models";
+import type { ContractItem } from "@/lib/contract-items";
 export function ServiceEstimator({
   obra,
   admin,
@@ -17,6 +19,8 @@ export function ServiceEstimator({
   references,
   categories,
   aiEnabled,
+  contracts,
+  contractItems,
 }: {
   obra: string;
   admin: boolean;
@@ -24,6 +28,8 @@ export function ServiceEstimator({
   references: CostSample[];
   categories: string[];
   aiEnabled: boolean;
+  contracts: Contract[];
+  contractItems: ContractItem[];
 }) {
   const groups = useMemo(() => {
     const map = new Map<string, CostSample[]>();
@@ -97,6 +103,8 @@ export function ServiceEstimator({
         obra={obra}
         enabled={aiEnabled}
         admin={admin}
+        contracts={contracts}
+        contractItems={contractItems}
       />
       <details className="manual-estimates">
         <summary className="panel">
