@@ -29,6 +29,8 @@ export type Stage = Base & {
   descricao: string;
   categoria: string;
   peso: number;
+  unidade: import("./estimates").ServiceUnit;
+  quantidade: number;
   percentual_executado: number;
   status: string;
 };

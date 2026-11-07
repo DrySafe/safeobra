@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { serviceUnits } from "./estimates.ts";
 export const categories = [
   "Alvenaria",
   "Elétrica",
@@ -36,6 +37,8 @@ export const contractSchema = z.object({
   valor_geral: cents,
 });
 export const stageSchema = z.object({
+  unidade: z.enum(serviceUnits).default("serviço"),
+  quantidade: z.coerce.number().positive().max(1000000).default(1),
   contrato_id: id,
   nome: text,
   descricao: optional,
@@ -98,3 +101,18 @@ export const allowedMime = [
   "application/xml",
   "text/xml",
 ];
+
+export const serviceReferenceSchema = z.object({
+  nome: text,
+  categoria: z.enum(categories),
+  unidade: z.enum(serviceUnits),
+  valor_unitario: cents.refine((n) => n > 0),
+  fonte: text,
+  data_referencia: day,
+  regiao: text,
+});
+export const estimationSchema = z.object({
+  reference: z.string().min(1).max(1000),
+  quantidade: z.coerce.number().positive().max(1000000),
+  percentual: z.coerce.number().min(0).max(100),
+});

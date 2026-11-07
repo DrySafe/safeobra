@@ -1,7 +1,7 @@
 /** Real PostgreSQL, isolated synthetic Auth/Storage schemas; no production connection. */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import EmbeddedPostgres from "embedded-postgres";
 const server = new EmbeddedPostgres({
@@ -34,12 +34,19 @@ create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,na
 alter table storage.objects enable row level security;
 grant select,insert,update,delete on storage.objects to authenticated;
 `);
-await client.query(
-  await readFile(
-    new URL("../supabase/migrations/202611060001_base.sql", import.meta.url),
-    "utf8",
-  ),
-);
+for (const name of (
+  await readdir(new URL("../supabase/migrations/", import.meta.url))
+)
+  .filter((name) => name.endsWith(".sql"))
+  .sort()) {
+  await client.query(
+    await readFile(
+      new URL("../supabase/migrations/" + name, import.meta.url),
+      "utf8",
+    ),
+  );
+}
+
 const admin = "00000000-0000-4000-8000-000000000001",
   user = "00000000-0000-4000-8000-000000000002",
   outsider = "00000000-0000-4000-8000-000000000003";
@@ -312,5 +319,62 @@ test("estorno restaura descontos e permite corrigir pagamento com auditoria", as
           )
         ).rows[0].count,
       ) > 0,
+    );
+  }));
+
+test("USER consulta referências mas não cadastra cotações", async () =>
+  asUser(user, async () => {
+    assert.equal(
+      (await client.query("select * from public.referencias_servicos"))
+        .rowCount,
+      0,
+    );
+    await assert.rejects(
+      client.query(
+        "insert into public.referencias_servicos(obra_id,nome,categoria,unidade,valor_unitario,fonte,data_referencia) values($1,'Reboco','Alvenaria','m²',2000,'Cotação',current_date)",
+        [obra],
+      ),
+      /row-level security/,
+    );
+  }));
+test("ADM cadastra referência auditada com unidade e fonte", async () =>
+  asUser(admin, async () => {
+    const { rows } = await client.query(
+      "insert into public.referencias_servicos(obra_id,nome,categoria,unidade,valor_unitario,fonte,data_referencia) values($1,'Reboco','Alvenaria','m²',2000,'Cotação',current_date) returning valor_unitario",
+      [obra],
+    );
+    assert.equal(Number(rows[0].valor_unitario), 2000);
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select count(*) from public.audit_logs where tabela='referencias_servicos'",
+          )
+        ).rows[0].count,
+      ),
+      1,
+    );
+  }));
+
+test("medições da etapa ficam fixas após ativar o plano", async () =>
+  asUser(admin, async () => {
+    const c = (
+      await client.query(
+        "insert into public.contratos_mao_de_obra(obra_id,profissional,tipo,valor_geral) values($1,'Teste','empreitada',100000) returning id",
+        [obra],
+      )
+    ).rows[0].id;
+    const stage = (
+      await client.query(
+        "insert into public.servicos(obra_id,contrato_id,nome,categoria,peso,unidade,quantidade) values($1,$2,'Reboco','Alvenaria',10000,'m²',100) returning id",
+        [obra, c],
+      )
+    ).rows[0].id;
+    await client.query("select public.activate_plan($1)", [c]);
+    await assert.rejects(
+      client.query("update public.servicos set quantidade=200 where id=$1", [
+        stage,
+      ]),
+      /medições imutáveis/,
     );
   }));

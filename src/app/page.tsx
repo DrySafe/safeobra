@@ -1,7 +1,11 @@
 export const dynamic = "force-dynamic";
-import Link from "next/link";
+import {
+  AppLink as Link,
+  MobileMenu,
+  QueryForm,
+} from "@/components/navigation";
 import { db } from "@/lib/supabase/server";
-import { session, access } from "@/server/access";
+import { session } from "@/server/access";
 import {
   DataForm,
   Theme,
@@ -23,12 +27,16 @@ import {
 import { categories } from "@/lib/schemas";
 import { money, dateBR, execution, balance } from "@/lib/finance";
 import type * as M from "@/lib/models";
+import { ExpenseCreateForm } from "@/components/expense-form";
+import { ServiceEstimator } from "@/components/service-estimator";
+import { serviceUnits, type CostSample } from "@/lib/estimates";
 const tabs = [
   ["dashboard", "◫", "Visão geral"],
   ["gastos", "↗", "Gastos"],
   ["equipe", "▤", "Empreitada"],
   ["diario", "▧", "Diário da obra"],
   ["relatorios", "▥", "Relatórios"],
+  ["estimativas", "≈", "Estimativa de serviços"],
   ["membros", "♧", "Equipe e convites"],
 ];
 const opts = (values: readonly string[]) =>
@@ -54,6 +62,20 @@ const date = (name: string, label: string): Field => ({
   type: "date",
   value: today(),
 });
+const measurementFields = (stage?: M.Stage): Field[] => [
+  {
+    name: "unidade",
+    label: "Unidade de medição",
+    options: opts(serviceUnits),
+    value: stage?.unidade ?? "serviço",
+  },
+  {
+    name: "quantidade",
+    label: "Quantidade prevista",
+    type: "number",
+    value: String(stage?.quantidade ?? 1),
+  },
+];
 const expenseFields: Field[] = [
   category,
   { name: "descricao", label: "Descrição" },
@@ -131,7 +153,12 @@ function Files({
   return (
     <details className="no-print">
       <summary>
-        Anexos (
+        {entity === "gastos"
+          ? canUpload
+            ? "📎 Enviar nota fiscal / ver comprovantes"
+            : "Notas fiscais e comprovantes"
+          : "Anexos"}{" "}
+        (
         {
           rows.filter((a) => a.entidade_id === id && a.entidade === entity)
             .length
@@ -180,7 +207,8 @@ export default async function Home({
   const tab = tabs.some((t) => t[0] === query.tab) ? query.tab! : "dashboard";
   const { data: obraRows, error: obraError } = await client
     .from("obras")
-    .select("id,nome,orcamento")
+    .select("id,nome,orcamento,obra_membros!inner(role)")
+    .eq("obra_membros.user_id", user.id)
     .order("criado_em");
   if (obraError) throw new Error("Falha ao listar obras");
   const obras = obraRows ?? [];
@@ -206,19 +234,44 @@ export default async function Home({
         </form>
       </main>
     );
-  const { role } = await access(obra.id);
+  const role = obra.obra_membros?.[0]?.role;
+  if (!role) throw new Error("Sem permissão para esta obra");
   const admin = role === "admin";
   const obraId = String(obra.id);
+  const needs = {
+    gastos: ["dashboard", "gastos", "relatorios"].includes(tab),
+    contratos_mao_de_obra: [
+      "dashboard",
+      "equipe",
+      "relatorios",
+      "estimativas",
+    ].includes(tab),
+    servicos: ["dashboard", "equipe", "diario", "estimativas"].includes(tab),
+    pagamentos: ["dashboard", "equipe", "relatorios"].includes(tab),
+    descontos_profissional: tab === "equipe",
+    ocorrencias: ["dashboard", "diario", "relatorios"].includes(tab),
+    anexos: ["gastos", "equipe", "diario"].includes(tab),
+    execucoes: tab === "equipe",
+  };
   const href = (t: string) => `/?obra=${obraId}&tab=${t}`;
   async function all<T>(table: string, columns = "*"): Promise<T[]> {
+    if (table in needs && !needs[table as keyof typeof needs]) return [];
     const result: T[] = [];
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await client
+      const latest = table === "ocorrencias" && tab === "dashboard";
+      let request = client
         .from(table)
         .select(columns)
         .eq("obra_id", obraId)
-        .order("id")
-        .range(from, from + 999);
+        .order(latest ? "criado_em" : "id", { ascending: !latest })
+        .range(from, from + (latest ? 4 : 999));
+      if (table === "anexos" && tab === "gastos")
+        request = request.eq("entidade", "gastos");
+      if (table === "anexos" && tab === "diario")
+        request = request.eq("entidade", "ocorrencias");
+      if (table === "servicos" && tab === "estimativas")
+        request = request.eq("percentual_executado", 100);
+      const { data, error } = await request;
       if (error) throw new Error("Falha ao carregar " + table);
       result.push(...(data as unknown as T[]));
       if (data.length < 1000) return result;
@@ -243,6 +296,37 @@ export default async function Home({
     all<M.Attachment>("anexos"),
     all<M.Execution>("execucoes"),
   ]);
+  const references =
+    tab === "estimativas" ? await all<CostSample>("referencias_servicos") : [];
+  const historicalSamples: CostSample[] =
+    tab === "estimativas"
+      ? stages
+          .filter((stage) => stage.percentual_executado === 100)
+          .flatMap((stage) => {
+            const contract = contracts.find(
+              (item) => item.id === stage.contrato_id && item.plano_ativo,
+            );
+            if (!contract || !Number(stage.quantidade)) return [];
+            const value = Math.round(
+              (Number(contract.valor_geral) * stage.peso) /
+                10000 /
+                Number(stage.quantidade),
+            );
+            return value > 0
+              ? [
+                  {
+                    id: "stage-" + stage.id,
+                    nome: stage.nome,
+                    unidade: stage.unidade,
+                    valor_unitario: value,
+                    fonte: "Etapa concluída — valor previsto no contrato",
+                    data_referencia: stage.criado_em,
+                    regiao: "Obra atual",
+                  },
+                ]
+              : [];
+          })
+      : [];
   const payments = allPayments.filter((p) => !p.anulado);
   const total = expenses.reduce((s, x) => s + Number(x.valor_total), 0);
   const totalContract = contracts
@@ -304,6 +388,15 @@ export default async function Home({
   );
   return (
     <div className="shell">
+      <MobileMenu tabs={tabs} tab={tab} obra={obraId} obraNome={obra.nome}>
+        <span className="small muted">{user.email}</span>
+        <div className="inline">
+          <Theme />
+          <form action={logout}>
+            <button className="secondary">Sair</button>
+          </form>
+        </div>
+      </MobileMenu>
       <aside className="sidebar no-print">
         <Link href="/" className="logo">
           <span className="mark">S</span>SafeObra
@@ -339,8 +432,12 @@ export default async function Home({
         </footer>
       </aside>
       <div className="workspace">
-        <header className="topbar no-print">
-          <form action="/" className="inline">
+        <header
+          className={
+            "topbar no-print" + (obras.length === 1 ? " single-work" : "")
+          }
+        >
+          <QueryForm className="inline obra-selector">
             <input type="hidden" name="tab" value={tab} />
             <label className="sr-only" htmlFor="obra-select">
               Selecionar obra
@@ -355,8 +452,8 @@ export default async function Home({
             <button className="secondary" type="submit">
               Abrir
             </button>
-          </form>
-          <div className="inline">
+          </QueryForm>
+          <div className="inline account-actions">
             <span className="muted small">{user.email}</span>
             <Theme />
             <form action={logout}>
@@ -508,7 +605,7 @@ export default async function Home({
             <>
               <section className="panel no-print">
                 <h2>Encontre um lançamento</h2>
-                <form action="/" className="form-grid">
+                <QueryForm className="form-grid">
                   <input type="hidden" name="obra" value={obraId} />
                   <input type="hidden" name="tab" value="gastos" />
                   <label>
@@ -548,20 +645,16 @@ export default async function Home({
                     <input type="date" name="fim" defaultValue={query.fim} />
                   </label>
                   <button>Aplicar filtros</button>
-                </form>
+                </QueryForm>
               </section>
               {admin && (
                 <details className="panel no-print">
                   <summary>+ Adicionar gasto</summary>
-                  <DataForm
-                    obra={obraId}
-                    kind="gastos"
-                    fields={expenseFields}
-                    title="Registrar gasto"
-                  />
+                  <ExpenseCreateForm obra={obraId} fields={expenseFields} />
                   <p className="small muted">
-                    O total é calculado pela quantidade × valor unitário.
-                    Adicione comprovantes após salvar.
+                    O total é calculado pela quantidade × valor unitário. Você
+                    pode escolher as notas neste formulário ou enviar depois
+                    pelo botão de cada gasto.
                   </p>
                 </details>
               )}
@@ -815,7 +908,7 @@ export default async function Home({
                         {!c.plano_ativo && (
                           <p className="notice">
                             Distribua 100% do valor contratado entre os serviços
-                            e ative o plano. Os pesos ficam fixos após a
+                            e ative o plano. Pesos e medições ficam fixos após a
                             ativação.
                           </p>
                         )}
@@ -909,6 +1002,7 @@ export default async function Home({
                                         value: s.nome,
                                       },
                                       { ...category, value: s.categoria },
+                                      ...measurementFields(s),
                                       {
                                         name: "peso",
                                         label: "Peso (%)",
@@ -959,6 +1053,7 @@ export default async function Home({
                                   },
                                   { name: "nome", label: "Nome do serviço" },
                                   category,
+                                  ...measurementFields(),
                                   {
                                     name: "peso",
                                     label: "Peso na empreitada (%)",
@@ -1241,7 +1336,7 @@ export default async function Home({
               </details>
               <section className="panel">
                 <h2>Galeria e linha do tempo</h2>
-                <form action="/" className="form-grid no-print">
+                <QueryForm className="form-grid no-print">
                   <input type="hidden" name="obra" value={obraId} />
                   <input type="hidden" name="tab" value="diario" />
                   <label>
@@ -1260,7 +1355,7 @@ export default async function Home({
                     </select>
                   </label>
                   <button>Filtrar diário</button>
-                </form>
+                </QueryForm>
                 <div className="timeline">
                   {occurrences
                     .filter(
@@ -1449,6 +1544,15 @@ export default async function Home({
               </section>
               <AuditTrail obra={obraId} />
             </>
+          )}
+          {tab === "estimativas" && (
+            <ServiceEstimator
+              obra={obraId}
+              admin={admin}
+              samples={[...references, ...historicalSamples]}
+              references={references}
+              categories={[...categories]}
+            />
           )}
           {tab === "membros" && (
             <>

@@ -1,5 +1,6 @@
 "use client";
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition, useId, type ReactNode } from "react";
+import { useReading, useRefresh } from "./navigation";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import * as S from "@/lib/schemas";
@@ -34,6 +35,8 @@ function schema(kind: string) {
     case "login":
     case "signup":
       return S.loginSchema;
+    case "referencias_servicos":
+      return S.serviceReferenceSchema;
     case "gastos":
       return S.expenseSchema;
     case "contratos_mao_de_obra":
@@ -64,16 +67,22 @@ export function DataForm({
   fields,
   title = "Salvar",
   record,
+  children,
+  onSaved,
 }: {
   kind: string;
   obra?: string;
   fields: Field[];
   title?: string;
   record?: string;
+  children?: ReactNode;
+  onSaved?: (result: A.Result) => void | Promise<void>;
 }) {
   const [result, setResult] = useState<A.Result>();
   const [pending, start] = useTransition();
+  useReading(pending);
   const ref = useRef<HTMLFormElement>(null);
+  const formId = useId();
   const router = useRouter();
   return (
     <form
@@ -122,10 +131,10 @@ export function DataForm({
             else res = await A.createRecord(obra, kind, parsed.data);
             setResult(res);
             if (res.ok) {
+              await onSaved?.(res);
               if (kind === "login") router.push("/");
               else {
                 ref.current?.reset();
-                router.refresh();
               }
             }
           } catch {
@@ -139,10 +148,11 @@ export function DataForm({
     >
       <div className="form-grid">
         {fields.map((f) => (
-          <label key={f.name}>
-            {f.label}
+          <div className="field" key={f.name}>
+            <label htmlFor={formId + f.name}>{f.label}</label>
             {f.options ? (
               <select
+                id={formId + f.name}
                 name={f.name}
                 defaultValue={f.value ?? ""}
                 required={!f.optional}
@@ -156,12 +166,14 @@ export function DataForm({
               </select>
             ) : f.type === "textarea" ? (
               <textarea
+                id={formId + f.name}
                 name={f.name}
                 defaultValue={f.value ?? ""}
                 maxLength={2000}
               />
             ) : (
               <input
+                id={formId + f.name}
                 name={f.name}
                 type={f.type ?? "text"}
                 defaultValue={f.value ?? ""}
@@ -180,9 +192,10 @@ export function DataForm({
                 }
               />
             )}
-          </label>
+          </div>
         ))}
       </div>
+      {children}
       <div>
         <button type="submit" disabled={pending}>
           {pending ? "Salvando…" : title}
@@ -214,7 +227,7 @@ export function ActionButton({
 }) {
   const [result, setResult] = useState<A.Result>();
   const [pending, start] = useTransition();
-  const router = useRouter();
+  useReading(pending);
   return (
     <span>
       <button
@@ -226,7 +239,8 @@ export function ActionButton({
             try {
               const r = await action();
               setResult(r);
-              if (r.ok) router.refresh();
+              // Server mutations already return the revalidated RSC tree.
+              // Signed URL reads must not refresh every dataset.
             } catch {
               setResult({ ok: false, message: "Falha de conexão" });
             }
@@ -285,7 +299,8 @@ export function Upload({
 }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const router = useRouter();
+  useReading(busy);
+  const refresh = useRefresh();
   return (
     <form
       className="no-print"
@@ -298,7 +313,7 @@ export function Upload({
             !(file instanceof File) ||
             !file.size ||
             file.size > S.MAX_UPLOAD ||
-            !S.allowedMime.includes(file.type)
+            (file.type && !S.allowedMime.includes(file.type))
           ) {
             setMessage(
               "Selecione JPG, PNG, WEBP, HEIC, PDF ou XML de até 4 MB.",
@@ -321,7 +336,7 @@ export function Upload({
               );
           }
           setMessage("Anexos enviados");
-          router.refresh();
+          refresh();
         } catch (e) {
           setMessage(e instanceof Error ? e.message : "Falha no envio");
         } finally {
@@ -407,15 +422,19 @@ export function LoginForm() {
 export function Photo({ obra, id }: { obra: string; id: string }) {
   const [url, setUrl] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  useReading(loading);
   return (
     <div>
       {url ? (
         <img
           src={url}
           alt="Foto do andamento da obra"
-          loading="lazy"
+          loading="eager"
+          onLoad={() => setLoading(false)}
           style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 10 }}
           onError={() => {
+            setLoading(false);
             setUrl("");
             setMessage("Link expirado. Abra a foto novamente.");
           }}
@@ -423,10 +442,21 @@ export function Photo({ obra, id }: { obra: string; id: string }) {
       ) : (
         <button
           className="secondary"
+          disabled={loading}
           onClick={async () => {
-            const r = await A.signedAttachment(obra, id, false);
-            if (r.ok && r.link) setUrl(r.link);
-            else setMessage(r.message);
+            setLoading(true);
+            setMessage("");
+            try {
+              const r = await A.signedAttachment(obra, id, false);
+              if (r.ok && r.link) setUrl(r.link);
+              else {
+                setMessage(r.message);
+                setLoading(false);
+              }
+            } catch {
+              setMessage("Não foi possível carregar a foto. Tente novamente.");
+              setLoading(false);
+            }
           }}
         >
           Ver foto

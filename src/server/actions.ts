@@ -9,7 +9,12 @@ import { access, session } from "./access";
 import { rate } from "./rate";
 import * as S from "@/lib/schemas";
 import { authErrorMessage, type AuthFailure } from "@/lib/auth-errors";
-export type Result = { ok: boolean; message: string; link?: string };
+export type Result = {
+  ok: boolean;
+  message: string;
+  link?: string;
+  recordId?: string;
+};
 const fail = (error: unknown): Result => ({
   ok: false,
   message:
@@ -98,6 +103,7 @@ const schemas = {
   servicos: S.stageSchema,
   descontos_profissional: S.discountSchema,
   ocorrencias: S.occurrenceSchema,
+  referencias_servicos: S.serviceReferenceSchema,
 };
 export async function createRecord(
   obra: string,
@@ -109,13 +115,15 @@ export async function createRecord(
     if (!(entity in schemas)) throw new Error("Módulo inválido");
     const data = schemas[entity as keyof typeof schemas].parse(raw);
     await rate("create", user.id, 40);
-    const { error } = await client
+    const { error, data: saved } = await client
       .from(entity)
-      .insert({ ...data, obra_id: obra });
+      .insert({ ...data, obra_id: obra })
+      .select("id")
+      .single();
     if (error)
       throw new Error("Falha ao salvar. Confira os dados e vínculos da obra.");
     revalidatePath("/");
-    return { ok: true, message: "Registro salvo" };
+    return { ok: true, message: "Registro salvo", recordId: saved?.id };
   } catch (e) {
     return fail(e);
   }
@@ -163,7 +171,11 @@ export async function removeRecord(
   try {
     const { client } = await access(obra, true);
     S.id.parse(record);
-    if (!["gastos", "servicos", "ocorrencias"].includes(entity))
+    if (
+      !["gastos", "servicos", "ocorrencias", "referencias_servicos"].includes(
+        entity,
+      )
+    )
       throw new Error("Exclusão indisponível");
     const { error, data } = await client
       .from(entity)

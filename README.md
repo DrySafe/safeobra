@@ -44,6 +44,15 @@ O serviço de e-mail padrão do Supabase tem restrição de destinatários e cot
 
 As Server Actions do Next.js podem responder HTTP 200 mesmo quando a operação retorna `{ ok: false }`. A interface mostra a mensagem da operação; o status HTTP isolado não confirma que o cadastro foi concluído. Falhas do provedor são registradas no servidor apenas com operação, código e status, sem e-mail, senha, token ou mensagem bruta.
 
+## Uso no celular, notas e estimativas
+
+- No celular, o cabeçalho mostra a obra e um menu hambúrguer. O menu reúne os módulos, tema e saída; fecha com toque fora ou Escape. No desktop, o menu lateral continua disponível.
+- A barra animada acompanha navegação, filtros, ações e uploads. Quem prefere movimento reduzido recebe uma barra estática. Cada módulo busca apenas os dados necessários: Gastos lê gastos/anexos; Equipe e convites não lê os oito livros financeiros; a sessão é reaproveitada somente dentro de cada requisição.
+- Em **Gastos → Adicionar gasto**, escolha fotos, PDF ou XML antes de salvar. Os anexos são enviados após a gravação do gasto. Se houver falha, use **Reenviar notas pendentes**, **Substituir notas pendentes** ou **Enviar depois**. Reenviar não cria outro gasto. Em cada lançamento, **Enviar nota fiscal / ver comprovantes** permite continuar depois. O limite continua 4 MiB por arquivo, com validação de bytes no servidor e Storage privado.
+- **Estimativa de serviços** é uma base de referências da própria obra, sem serviço externo de IA. O ADM cadastra cotações com preço por unidade, fonte, região e data. Etapas concluídas entram automaticamente usando o valor previsto no contrato dividido pela quantidade. A média e a faixa observada são calculadas apenas entre o mesmo nome de serviço, unidade e região.
+- Antes de ativar uma empreitada, informe a **unidade de medição** e a **quantidade prevista** de cada serviço. Depois de ativado, pesos e medições ficam fixos para preservar o histórico. Etapas antigas recebem unidade `serviço` e quantidade 1; não são convertidas artificialmente em m².
+- A estimativa é informativa: não muda o valor contratado, execução financeira ou pagamentos. Não inclui uma tabela nacional pré-preenchida, preços inventados ou pesquisa automática de mercado. Uma referência oficial precisa ser cadastrada com UF/região, competência e fonte; obra sem referências mostra estado vazio.
+
 ## Regras financeiras
 
 - Gasto: quantidade × valor unitário, arredondado para centavos pelo PostgreSQL. O total não é fornecido pelo navegador.

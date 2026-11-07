@@ -1,15 +1,17 @@
 import "server-only";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/supabase/server";
 import { id } from "@/lib/schemas";
-export async function session() {
+// React cache is request-scoped; no sessions are shared between users.
+export const session = cache(async function session() {
   const client = await db();
   const {
     data: { user },
   } = await client.auth.getUser();
   if (!user) redirect("/login");
   return { client, user };
-}
+});
 export async function access(obra: string, admin = false) {
   id.parse(obra);
   const { client, user } = await session();
