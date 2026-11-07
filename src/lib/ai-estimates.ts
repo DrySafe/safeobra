@@ -145,15 +145,31 @@ export const aiEstimateResponseSchema = z.object({
   pesquisado_em: z.string(),
 });
 export type AiEstimateResult = z.infer<typeof aiEstimateResponseSchema>;
+export function regionParts(region: string) {
+  const match = region.match(/^(.+?)\s*\/\s*([a-z]{2})$/i);
+  return {
+    city: match?.[1].trim() ?? region.trim(),
+    uf: match?.[2].toUpperCase() ?? null,
+  };
+}
+const locationText = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 export function resolveWebEstimate(
   raw: unknown,
   sourceUrls: string[],
   region: string,
   scope: (typeof priceScopes)[number],
+  sourceTitles: Record<string, string> = {},
 ): AiEstimateResult {
   const data = webResearchSchema.parse(raw);
   const sources = new Set(sourceUrls.map(publicSourceUrl).filter(Boolean));
   const domains = new Set<string>();
+  const requested = regionParts(region);
   const rank = { cidade: 0, estado: 1, nacional: 2, outra_regiao: 3 };
   let references = data.referencias
     .filter(
@@ -163,6 +179,41 @@ export function resolveWebEstimate(
         row.unidade === data.unidade &&
         row.abrangencia !== "outra_regiao",
     )
+    .filter((row) => {
+      if (row.abrangencia === "nacional")
+        return locationText(row.regiao) === "brasil";
+      const url = publicSourceUrl(row.url)!;
+      const parsed = new URL(url);
+      const evidence = locationText(
+        parsed.hostname +
+          " " +
+          parsed.pathname +
+          " " +
+          (sourceTitles[url] ?? ""),
+      );
+      if (row.abrangencia === "cidade")
+        return (
+          locationText(row.regiao) === locationText(region) &&
+          (" " + evidence + " ").includes(
+            " " + locationText(requested.city) + " ",
+          )
+        );
+      if (row.abrangencia === "estado" && requested.uf) {
+        const uf = requested.uf.toLowerCase();
+        const stateEvidence =
+          (
+            " " +
+            locationText(parsed.hostname + " " + parsed.pathname) +
+            " "
+          ).includes(" " + uf + " ") ||
+          new RegExp("\\b" + requested.uf + "\\b").test(
+            sourceTitles[url] ?? "",
+          ) ||
+          (requested.uf === "SE" && evidence.includes("sergipe"));
+        return row.regiao.toUpperCase() === requested.uf && stateEvidence;
+      }
+      return false;
+    })
     .sort((a, b) => rank[a.abrangencia] - rank[b.abrangencia]);
   if (references.length) {
     const best = references[0].abrangencia;
@@ -202,7 +253,9 @@ export function resolveWebEstimate(
     quantidade_total: data.quantidade_total,
     percentual_executado: data.percentual_executado,
     observacoes: references.length
-      ? data.observacoes
+      ? references.length === data.referencias.length
+        ? data.observacoes
+        : "Foram consideradas apenas referências compatíveis com a unidade, a composição e a abrangência exibidas."
       : "Não foi encontrado preço publicado com fonte e composição comparáveis nesta pesquisa.",
     perguntas: questions,
     referencias: references,

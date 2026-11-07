@@ -323,3 +323,46 @@ test("resumo sem fonte aproveitada não apresenta valores monetários sem refer�
   assert.equal(result.calculo, null);
   assert.ok(!result.observacoes.includes("25,00"));
 });
+
+test("referência nacional não se torna municipal pelo texto da pergunta", () => {
+  const falseLocal = { ...source, regiao: "Aracaju/SE", abrangencia: "cidade" };
+  const result = resolveWebEstimate(
+    { ...research, referencias: [falseLocal] },
+    [source.url],
+    "Aracaju/SE",
+    "mao_de_obra",
+  );
+  assert.equal(result.status, "sem_resultados");
+  const city = {
+    ...source,
+    url: "https://pedreiros.example.com/aracaju/precos",
+    regiao: "Aracaju/SE",
+    abrangencia: "cidade",
+  };
+  const refs = [falseLocal, city];
+  const valid = resolveWebEstimate(
+    { ...research, referencias: refs },
+    refs.map((r) => r.url),
+    "Aracaju/SE",
+    "mao_de_obra",
+  );
+  assert.equal(valid.referencias.length, 1);
+  assert.equal(valid.referencias[0].url, city.url);
+});
+test("referência estadual mantém UF e aviso em vez de virar preço da cidade", () => {
+  const state = {
+    ...source,
+    url: "https://precos.example.com/reboco/se",
+    regiao: "SE",
+    abrangencia: "estado",
+  };
+  const result = resolveWebEstimate(
+    { ...research, referencias: [state] },
+    [state.url],
+    "Aracaju/SE",
+    "mao_de_obra",
+  );
+  assert.equal(result.status, "estimativa");
+  assert.equal(result.referencias[0].regiao, "SE");
+  assert.match(result.aviso_regional!, /estaduais/);
+});
