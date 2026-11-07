@@ -222,13 +222,16 @@ export function ContractWorkboard({
     setResearching(true);
     setBusy(true);
     setMessage("");
+    const ordered = [...list].sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR", { numeric: true }),
+    );
     let done = 0,
       priced = 0,
       failed = 0;
     setPriceProgress({ done, priced, failed, total: list.length });
     try {
       for (let offset = 0; offset < list.length && !stop.current; offset += 8) {
-        const group = list.slice(offset, offset + 8);
+        const group = ordered.slice(offset, offset + 8);
         let finished = false;
         while (!finished && !stop.current) {
           controller.current = new AbortController();

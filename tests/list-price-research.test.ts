@@ -167,3 +167,18 @@ test("não apresenta preço pesquisado sem execução de busca e não expõe err
     (error: any) => error.status === 429 && !error.message.includes("private"),
   );
 });
+test("referência por serviço sem quantidade confirmada não vira preço total por causa do cadastro provisório", async () => {
+  const data = result(0, { unidade: "serviço" });
+  data.pesquisa.referencias[0].unidade = "serviço";
+  let calls = 0;
+  const prices = await researchServicePriceList({
+    ...options,
+    items: [items[0]],
+    fetcher: async () =>
+      ++calls === 1
+        ? completed("Relatório", true)
+        : completed({ resultados: [data] }),
+  });
+  assert.equal(prices[0].calculo?.mean, 2500);
+  assert.equal(researchedItemTotal(prices[0], items[0]), null);
+});

@@ -227,6 +227,10 @@ export function researchedItemTotal(
   }
   const c = result.calculo;
   if (!c) return null;
+  // A provisional whole-service record does not establish that a researched
+  // service fee covers the complete scope. Require the research quantity here.
+  if (result.unidade === "serviço" && result.quantidade_total === null)
+    return null;
   const quantity =
     result.unidade === item.unidade
       ? Number(item.quantidade)
