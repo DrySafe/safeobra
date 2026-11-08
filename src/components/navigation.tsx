@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCloseDialog } from "./simple-ui";
+import { useRememberedForm } from "./dialog-drafts";
 import { mainSections, sectionFor } from "@/lib/app-navigation";
 import { useRouter } from "next/navigation";
 import {
@@ -136,10 +137,13 @@ export function QueryForm({
 }) {
   const { navigate } = useContext(ReadingContext);
   const close = useCloseDialog();
+  const draft = useRememberedForm("query");
   return (
     <form
       action="/"
       className={className}
+      ref={draft.restore}
+      onChangeCapture={draft.remember}
       onChange={
         autoSubmit ? (event) => event.currentTarget.requestSubmit() : undefined
       }
@@ -150,6 +154,7 @@ export function QueryForm({
           if (typeof value === "string" && value) params.append(key, value);
         });
         navigate("/?" + params.toString());
+        draft.clear();
         close?.();
       }}
     >

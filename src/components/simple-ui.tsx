@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { DialogDraftsContext } from "./dialog-drafts";
 export function searchKey(value: string) {
   return value
     .normalize("NFD")
@@ -32,6 +33,7 @@ export function Dialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null),
     label = useId();
+  const drafts = useRef(new Map<string, { current: unknown }>());
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
@@ -75,29 +77,31 @@ export function Dialog({
           close.current();
       }}
     >
-      {open && (
-        <CloseContext.Provider value={onClose}>
-          <header className="dialog-heading">
-            {onBack && (
-              <button type="button" className="secondary" onClick={onBack}>
-                ← Voltar
+      <DialogDraftsContext.Provider value={drafts.current}>
+        {open && (
+          <CloseContext.Provider value={onClose}>
+            <header className="dialog-heading">
+              {onBack && (
+                <button type="button" className="secondary" onClick={onBack}>
+                  ← Voltar
+                </button>
+              )}
+              <h2 id={label} tabIndex={-1}>
+                {title}
+              </h2>
+              <button
+                type="button"
+                className="secondary dialog-close"
+                aria-label="Fechar painel"
+                onClick={onClose}
+              >
+                Fechar ✕
               </button>
-            )}
-            <h2 id={label} tabIndex={-1}>
-              {title}
-            </h2>
-            <button
-              type="button"
-              className="secondary dialog-close"
-              aria-label="Fechar painel"
-              onClick={onClose}
-            >
-              Fechar ✕
-            </button>
-          </header>
-          <div className="dialog-content">{children}</div>
-        </CloseContext.Provider>
-      )}
+            </header>
+            <div className="dialog-content">{children}</div>
+          </CloseContext.Provider>
+        )}
+      </DialogDraftsContext.Provider>
     </dialog>
   );
 }

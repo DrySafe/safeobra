@@ -87,7 +87,7 @@ export function ContractPayments({
     ];
   }
   function discountFields(d?: Discount): Field[] {
-    return [
+    const fields: Field[] = [
       {
         name: "contrato_id",
         label: "Contrato",
@@ -116,6 +116,15 @@ export function ContractPayments({
         ],
       },
     ];
+    if (d?.aplicacao === "final" && Number(d.aplicado) > 0)
+      fields.push({
+        name: "devolver_aplicados",
+        label:
+          "Ainda não foi descontado: devolver o valor aos pagamentos e deixar para o fechamento final",
+        type: "checkbox",
+        optional: true,
+      });
+    return fields;
   }
   return (
     <div className="contract-payments">
@@ -265,12 +274,15 @@ export function ContractPayments({
           edit: admin ? (
             <>
               <p className="small muted">
-                Já aplicado: {money(Number(d.aplicado))}. O valor total não pode
-                ser menor que esse valor. A mudança de fechamento vale para o
-                saldo pendente.
+                Já aplicado: {money(Number(d.aplicado))}. Ao transferir de
+                semanal para final, esse valor volta ao líquido dos pagamentos e
+                fica pendente para o fechamento final.
+                {d.aplicacao === "final" &&
+                  Number(d.aplicado) > 0 &&
+                  " Se ele ainda não foi retirado, marque a correção abaixo."}
               </p>
               <DataForm
-                kind="descontos_profissional"
+                kind="descontos_profissional-edit"
                 obra={obra}
                 record={d.id}
                 fields={discountFields(d)}

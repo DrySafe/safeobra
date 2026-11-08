@@ -139,13 +139,14 @@ export async function updateRecord(
     S.id.parse(record);
     let data: Record<string, unknown>;
     if (entity === "descontos_profissional") {
-      const parsed = S.discountSchema.parse(raw);
-      const { error } = await client.rpc("update_discount", {
+      const parsed = S.discountEditSchema.parse(raw);
+      const { error, data: returned } = await client.rpc("revise_discount", {
         p_obra: obra,
         p_desconto: record,
         p_descricao: parsed.descricao,
         p_valor: parsed.valor,
         p_aplicacao: parsed.aplicacao,
+        p_devolver: parsed.devolver_aplicados,
       });
       if (error)
         throw new Error(
@@ -157,7 +158,9 @@ export async function updateRecord(
       return {
         ok: true,
         message:
-          "Desconto atualizado. O fechamento escolhido vale para o saldo pendente.",
+          Number(returned) > 0
+            ? "Desconto transferido para o fechamento final e pagamentos líquidos corrigidos."
+            : "Desconto atualizado.",
       };
     }
     if (entity === "gastos") data = S.expenseSchema.parse(raw);

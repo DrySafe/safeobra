@@ -1,6 +1,7 @@
 "use client";
 import { useCloseDialog } from "./simple-ui";
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { useDialogDraftRef, useDialogDraftState } from "./dialog-drafts";
 import { DataForm, type Field } from "./forms";
 import { useNotice, useReading, useRefresh } from "./navigation";
 import { MAX_UPLOAD, allowedMime } from "@/lib/schemas";
@@ -13,11 +14,15 @@ export function ExpenseCreateForm({
   fields: Field[];
   entity?: "gastos" | "ocorrencias";
 }) {
-  const [files, setFiles] = useState<File[]>([]);
-  const [savedId, setSavedId] = useState<string>();
+  const key = `${obra}:${entity}`;
+  const [files, setFiles] = useDialogDraftState<File[]>(key + ":files", []);
+  const [savedId, setSavedId] = useDialogDraftState<string | undefined>(
+    key + ":saved",
+    undefined,
+  );
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const queue = useRef<File[]>([]);
+  const [message, setMessage] = useDialogDraftState(key + ":message", "");
+  const queue = useDialogDraftRef<File[]>(key + ":queue", []);
   const refresh = useRefresh();
   const close = useCloseDialog();
   const announce = useNotice();
@@ -41,6 +46,9 @@ export function ExpenseCreateForm({
       }
       setMessage("Registro salvo e arquivos enviados.");
       announce("Registro salvo e arquivos enviados.");
+      setSavedId(undefined);
+      setFiles([]);
+      setMessage("");
       refresh();
       close?.();
     } catch (error) {
@@ -150,6 +158,7 @@ export function ExpenseCreateForm({
           Notas fiscais e comprovantes (opcional)
           <input
             type="file"
+            name="attachments"
             multiple
             accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,application/xml,text/xml"
             onChange={(event) => {

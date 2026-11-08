@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState, useTransition, useId, type ReactNode } from "react";
 import { useCloseDialog } from "./simple-ui";
+import { useRememberedForm } from "./dialog-drafts";
 import { useNotice, useReading, useRefresh } from "./navigation";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
@@ -47,6 +48,8 @@ function schema(kind: string) {
       return S.stageSchema;
     case "descontos_profissional":
       return S.discountSchema;
+    case "descontos_profissional-edit":
+      return S.discountEditSchema;
     case "ocorrencias":
       return S.occurrenceSchema;
     case "ocorrencias-edit":
@@ -84,6 +87,16 @@ export function DataForm({
   const [pending, start] = useTransition();
   useReading(pending);
   const ref = useRef<HTMLFormElement>(null);
+  const draft = useRememberedForm(
+    JSON.stringify([
+      kind,
+      obra,
+      record ?? "new",
+      fields
+        .filter((f) => f.type === "hidden" || f.name === "servico_id")
+        .map((f) => [f.name, f.value ?? ""]),
+    ]),
+  );
   const formId = useId();
   const router = useRouter();
   const close = useCloseDialog(),
@@ -91,7 +104,11 @@ export function DataForm({
   return (
     <form
       method="post"
-      ref={ref}
+      ref={(form) => {
+        ref.current = form;
+        draft.restore(form);
+      }}
+      onChangeCapture={draft.remember}
       onSubmit={(e) => {
         e.preventDefault();
         const form = new FormData(e.currentTarget);
@@ -136,6 +153,7 @@ export function DataForm({
             else res = await A.createRecord(obra, kind, parsed.data);
             setResult(res);
             if (res.ok) {
+              draft.clear();
               await onSaved?.(res);
               if (!res.link && kind !== "login" && kind !== "signup") {
                 announce(res.message);
@@ -201,7 +219,7 @@ export function DataForm({
                 placeholder={
                   f.suggestions ? "Escolha ou digite uma categoria" : undefined
                 }
-                defaultValue={f.value ?? ""}
+                defaultValue={f.type === "checkbox" ? "on" : (f.value ?? "")}
                 required={!f.optional && f.type !== "checkbox"}
                 step={f.type === "number" ? "any" : undefined}
                 min={f.type === "number" ? 0 : undefined}
@@ -339,13 +357,17 @@ export function Upload({
   const [busy, setBusy] = useState(false);
   useReading(busy);
   const refresh = useRefresh();
+  const draft = useRememberedForm(`upload:${obra}:${entity}:${id}`);
   return (
     <form
       method="post"
       className="no-print"
+      ref={draft.restore}
+      onChangeCapture={draft.remember}
       onSubmit={async (e) => {
         e.preventDefault();
-        const form = new FormData(e.currentTarget);
+        const element = e.currentTarget;
+        const form = new FormData(element);
         const files = form.getAll("files");
         for (const file of files) {
           if (
@@ -375,6 +397,8 @@ export function Upload({
               );
           }
           setMessage("Anexos enviados");
+          draft.clear();
+          element.reset();
           refresh();
         } catch (e) {
           setMessage(e instanceof Error ? e.message : "Falha no envio");

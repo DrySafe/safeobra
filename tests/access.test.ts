@@ -995,3 +995,279 @@ test("edição de desconto impede USER, terceiro, obra incorreta e alteração d
       false,
     );
   }));
+
+test("transferir desconto semanal para final corrige 1820 para 2000 sem duplicar pagamentos", async () =>
+  asUser(admin, async () => {
+    const c = await itemContract(1000000);
+    const d = (
+      await client.query(
+        "insert into public.descontos_profissional(obra_id,contrato_id,descricao,valor,aplicacao) values($1,$2,'Carrinho',18000,'semanal') returning id",
+        [obra, c],
+      )
+    ).rows[0].id;
+    const p = (
+      await client.query(
+        "select public.record_payment($1,null,current_date,200000,'Inicial','Pix','semanal',false) id",
+        [c],
+      )
+    ).rows[0].id;
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select valor from public.pagamentos where id=$1",
+            [p],
+          )
+        ).rows[0].valor,
+      ),
+      182000,
+    );
+    const result = (
+      await client.query(
+        "select public.revise_discount($1,$2,'Carrinho',18000,'final',false) amount",
+        [obra, d],
+      )
+    ).rows[0];
+    assert.equal(Number(result.amount), 18000);
+    const corrected = (
+      await client.query(
+        "select valor_bruto,desconto,valor from public.pagamentos where id=$1",
+        [p],
+      )
+    ).rows[0];
+    assert.deepEqual(Object.values(corrected).map(Number), [200000, 0, 200000]);
+    assert.equal(
+      (
+        await client.query(
+          "select count(*) n from public.pagamentos where contrato_id=$1",
+          [c],
+        )
+      ).rows[0].n,
+      "1",
+    );
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select aplicado from public.descontos_profissional where id=$1",
+            [d],
+          )
+        ).rows[0].aplicado,
+      ),
+      0,
+    );
+    await client.query(
+      "select public.revise_discount($1,$2,'Carrinho',18000,'final',true)",
+      [obra, d],
+    );
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select valor from public.pagamentos where id=$1",
+            [p],
+          )
+        ).rows[0].valor,
+      ),
+      200000,
+    );
+    const final = (
+      await client.query(
+        "select public.record_payment($1,null,current_date,20000,'Final','Pix','semanal',true) id",
+        [c],
+      )
+    ).rows[0].id;
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select desconto from public.pagamentos where id=$1",
+            [final],
+          )
+        ).rows[0].desconto,
+      ),
+      18000,
+    );
+    await client.query("select public.cancel_payment($1)", [p]);
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select aplicado from public.descontos_profissional where id=$1",
+            [d],
+          )
+        ).rows[0].aplicado,
+      ),
+      18000,
+    );
+    await client.query("select public.cancel_payment($1)", [final]);
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select aplicado from public.descontos_profissional where id=$1",
+            [d],
+          )
+        ).rows[0].aplicado,
+      ),
+      0,
+    );
+  }));
+
+test("correção explícita de desconto já final é atômica e preserva outros descontos e centavos dos vínculos", async () =>
+  asUser(admin, async () => {
+    const c = await itemContract(100000);
+    await saveItems(c, [itemInput("A", 50000), itemInput("B", 50000)]);
+    const items = (
+      await client.query(
+        "select id from public.empreitada_itens where contrato_id=$1 order by nome",
+        [c],
+      )
+    ).rows;
+    const ds = (
+      await client.query(
+        "insert into public.descontos_profissional(obra_id,contrato_id,descricao,valor,aplicacao) values($1,$2,'Devolver',333,'semanal'),($1,$2,'Manter',667,'semanal') returning id,descricao",
+        [obra, c],
+      )
+    ).rows;
+    const d = ds.find(
+      (d: { descricao: string }) => d.descricao === "Devolver",
+    ).id;
+    const p = (
+      await client.query(
+        "select public.record_payment($1,null,current_date,3001,'Pagamento','Pix','semanal',false) id",
+        [c],
+      )
+    ).rows[0].id;
+    await client.query(
+      "select public.allocate_contract_payment($1,$2,1000,333)",
+      [p, items[0].id],
+    );
+    await client.query(
+      "select public.allocate_contract_payment($1,$2,1000,334)",
+      [p, items[1].id],
+    );
+    await client.query(
+      "select public.update_discount($1,$2,'Devolver',333,'final')",
+      [obra, d],
+    );
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select public.revise_discount($1,$2,'Devolver',333,'final',false) amount",
+            [obra, d],
+          )
+        ).rows[0].amount,
+      ),
+      0,
+    );
+    await rejectWithSavepoint(
+      "select public.revise_discount($1,$2,'Devolver',0,'final',true)",
+      [obra, d],
+      /Confira/,
+    );
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select desconto from public.pagamentos where id=$1",
+            [p],
+          )
+        ).rows[0].desconto,
+      ),
+      1000,
+    );
+    await client.query(
+      "select public.revise_discount($1,$2,'Devolver',333,'final',true)",
+      [obra, d],
+    );
+    const payment = (
+      await client.query(
+        "select valor_bruto,desconto,valor from public.pagamentos where id=$1",
+        [p],
+      )
+    ).rows[0];
+    assert.deepEqual(Object.values(payment).map(Number), [3001, 667, 2334]);
+    const allocations = (
+      await client.query(
+        "select valor_bruto,desconto from public.pagamento_itens where pagamento_id=$1",
+        [p],
+      )
+    ).rows;
+    assert.equal(
+      allocations.reduce(
+        (n: number, a: { valor_bruto: string }) => n + Number(a.valor_bruto),
+        0,
+      ),
+      2000,
+    );
+    const discount = allocations.reduce(
+      (n: number, a: { desconto: string }) => n + Number(a.desconto),
+      0,
+    );
+    assert.equal(discount, 445);
+    assert.equal(2000 - discount, 1555);
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select sum(valor) amount from public.pagamento_descontos where pagamento_id=$1",
+            [p],
+          )
+        ).rows[0].amount,
+      ),
+      667,
+    );
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select aplicado from public.descontos_profissional where descricao='Manter' and contrato_id=$1",
+            [c],
+          )
+        ).rows[0].aplicado,
+      ),
+      667,
+    );
+    await client.query("select public.cancel_payment($1)", [p]);
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select sum(aplicado) amount from public.descontos_profissional where contrato_id=$1",
+            [c],
+          )
+        ).rows[0].amount,
+      ),
+      0,
+    );
+  }));
+
+test("devolução de desconto mantém função interna privada e nega usuário e terceiro", async () =>
+  asUser(admin, async () => {
+    for (const uid of [user, outsider]) {
+      await client.query("savepoint unauthorized_refund");
+      await client.query("select set_config('request.jwt.claim.sub',$1,true)", [
+        uid,
+      ]);
+      await assert.rejects(
+        client.query(
+          "select public.revise_discount($1,gen_random_uuid(),'Teste',18000,'final',true)",
+          [obra],
+        ),
+        /Sem permissão/,
+      );
+      await client.query("rollback to savepoint unauthorized_refund");
+    }
+    for (const role of ["anon", "authenticated"])
+      assert.equal(
+        (
+          await client.query(
+            "select has_function_privilege($1,'public.defer_applied_discount(uuid,uuid)','EXECUTE') allowed",
+            [role],
+          )
+        ).rows[0].allowed,
+        false,
+      );
+  }));

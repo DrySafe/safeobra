@@ -72,6 +72,9 @@ export const discountSchema = z.object({
   valor: cents.refine((x) => x > 0),
   aplicacao: z.enum(["semanal", "final"]),
 });
+export const discountEditSchema = discountSchema.extend({
+  devolver_aplicados: z.boolean().default(false),
+});
 export const occurrenceSchema = z.object({
   titulo: text,
   descricao: optional,
