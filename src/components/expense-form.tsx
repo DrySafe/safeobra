@@ -1,14 +1,17 @@
 "use client";
+import { useCloseDialog } from "./simple-ui";
 import { useRef, useState } from "react";
 import { DataForm, type Field } from "./forms";
-import { useReading, useRefresh } from "./navigation";
+import { useNotice, useReading, useRefresh } from "./navigation";
 import { MAX_UPLOAD, allowedMime } from "@/lib/schemas";
 export function ExpenseCreateForm({
   obra,
   fields,
+  entity = "gastos",
 }: {
   obra: string;
   fields: Field[];
+  entity?: "gastos" | "ocorrencias";
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const [savedId, setSavedId] = useState<string>();
@@ -16,31 +19,35 @@ export function ExpenseCreateForm({
   const [message, setMessage] = useState("");
   const queue = useRef<File[]>([]);
   const refresh = useRefresh();
+  const close = useCloseDialog();
+  const announce = useNotice();
   useReading(busy);
   async function upload(id: string) {
     setBusy(true);
-    setMessage("Enviando notas fiscais…");
+    setMessage("Enviando arquivos…");
     try {
       while (queue.current.length) {
         const body = new FormData();
         body.set("obra", obra);
-        body.set("entity", "gastos");
+        body.set("entity", entity);
         body.set("entityId", id);
         body.set("file", queue.current[0]);
         const response = await fetch("/api/upload", { method: "POST", body });
         if (!response.ok)
           throw new Error(
-            "O gasto foi salvo, mas uma nota não foi enviada. Tente enviar novamente.",
+            "O registro foi salvo, mas um arquivo não foi enviado. Tente enviar novamente.",
           );
         queue.current.shift();
       }
-      setMessage("Gasto salvo e notas fiscais enviadas.");
+      setMessage("Registro salvo e arquivos enviados.");
+      announce("Registro salvo e arquivos enviados.");
       refresh();
+      close?.();
     } catch (error) {
       setMessage(
         error instanceof Error
           ? error.message
-          : "Não foi possível enviar a nota.",
+          : "Não foi possível enviar o arquivo.",
       );
       refresh();
     } finally {
@@ -125,16 +132,17 @@ export function ExpenseCreateForm({
     );
   return (
     <DataForm
-      kind="gastos"
+      kind={entity}
       obra={obra}
       fields={fields}
-      title={files.length ? "Salvar gasto e enviar notas" : "Registrar gasto"}
+      title={files.length ? "Salvar e enviar arquivos" : "Salvar registro"}
       onSaved={async (result) => {
         if (files.length && result.recordId) {
           queue.current = [...files];
           setSavedId(result.recordId);
           await upload(result.recordId);
         } else setFiles([]);
+        if (queue.current.length === 0) close?.();
       }}
     >
       <div className="receipt-picker">

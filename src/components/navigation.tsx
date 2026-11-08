@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { useCloseDialog } from "./simple-ui";
+import { mainSections, sectionFor } from "@/lib/app-navigation";
 import { useRouter } from "next/navigation";
 import {
   createContext,
@@ -16,7 +18,13 @@ const ReadingContext = createContext<{
   begin: () => () => void;
   navigate: (href: string) => void;
   refresh: () => void;
-}>({ begin: () => () => {}, navigate: () => {}, refresh: () => {} });
+  announce: (message: string) => void;
+}>({
+  begin: () => () => {},
+  navigate: () => {},
+  refresh: () => {},
+  announce: () => {},
+});
 export function LoadingBar() {
   return (
     <div className="reading-bar" role="status" aria-live="polite">
@@ -28,6 +36,13 @@ export function LoadingBar() {
 export function ReadingProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [reads, setReads] = useState(0);
+  const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (notice) {
+      const timer = setTimeout(() => setNotice(""), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [notice]);
   const [pending, start] = useTransition();
   const begin = useCallback(() => {
     let ended = false;
@@ -45,11 +60,29 @@ export function ReadingProvider({ children }: { children: ReactNode }) {
   );
   const refresh = useCallback(() => start(() => router.refresh()), [router]);
   return (
-    <ReadingContext.Provider value={{ begin, navigate, refresh }}>
+    <ReadingContext.Provider
+      value={{ begin, navigate, refresh, announce: setNotice }}
+    >
       {(pending || reads > 0) && <LoadingBar />}
       {children}
+      {notice && (
+        <div className="app-toast" role="status">
+          {notice}
+          <button
+            type="button"
+            className="secondary"
+            aria-label="Fechar aviso"
+            onClick={() => setNotice("")}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </ReadingContext.Provider>
   );
+}
+export function useNotice() {
+  return useContext(ReadingContext).announce;
 }
 export function useRefresh() {
   return useContext(ReadingContext).refresh;
@@ -95,15 +128,21 @@ export function AppLink({
 export function QueryForm({
   children,
   className,
+  autoSubmit = false,
 }: {
   children: ReactNode;
   className?: string;
+  autoSubmit?: boolean;
 }) {
   const { navigate } = useContext(ReadingContext);
+  const close = useCloseDialog();
   return (
     <form
       action="/"
       className={className}
+      onChange={
+        autoSubmit ? (event) => event.currentTarget.requestSubmit() : undefined
+      }
       onSubmit={(event) => {
         event.preventDefault();
         const params = new URLSearchParams();
@@ -111,111 +150,32 @@ export function QueryForm({
           if (typeof value === "string" && value) params.append(key, value);
         });
         navigate("/?" + params.toString());
+        close?.();
       }}
     >
       {children}
     </form>
   );
 }
-export function MobileMenu({
-  tabs,
-  tab,
-  obra,
-  obraNome,
-  children,
-}: {
-  children?: ReactNode;
-  tabs: string[][];
-  tab: string;
-  obra: string;
-  obraNome: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const toggle = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLElement>(null);
-  const { navigate } = useContext(ReadingContext);
-  useEffect(() => {
-    setOpen(false);
-  }, [tab, obra]);
-  useEffect(() => {
-    if (!open) return;
-    menu.current?.querySelector("a")?.focus();
-    const wide = window.matchMedia("(min-width:768px)");
-    const resize = () => {
-      if (wide.matches) setOpen(false);
-    };
-    wide.addEventListener("change", resize);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        toggle.current?.focus();
-      }
-    };
-    document.addEventListener("keydown", key);
-    return () => {
-      document.body.style.overflow = previous;
-      document.removeEventListener("keydown", key);
-      wide.removeEventListener("change", resize);
-    };
-  }, [open]);
+export function MobileMenu({ tab, obra }: { tab: string; obra: string }) {
   return (
-    <div className="mobile-navigation no-print">
-      <div className="mobile-brand">
-        <span className="mark">S</span>
-        <div>
-          <strong>SafeObra</strong>
-          <span>{obraNome}</span>
-        </div>
-      </div>
-      <button
-        ref={toggle}
-        type="button"
-        className="secondary menu-toggle"
-        aria-label={open ? "Fechar menu" : "Abrir menu"}
-        aria-expanded={open}
-        aria-controls="mobile-menu"
-        onClick={() => setOpen(!open)}
-      >
-        {open ? "✕" : "☰"}
-      </button>
-      {open && (
-        <>
-          <button
-            className="menu-backdrop"
-            aria-label="Fechar navegação"
-            onClick={() => setOpen(false)}
-          />
-          <nav
-            ref={menu}
-            id="mobile-menu"
-            className="mobile-menu"
-            aria-label="Menu principal"
-          >
-            <div className="eyebrow">Sua obra</div>
-            {tabs.map(([key, icon, label]) => (
-              <Link
-                key={key}
-                prefetch={false}
-                className={"nav-link " + (tab === key ? "active" : "")}
-                aria-current={tab === key ? "page" : undefined}
-                href={`/?obra=${obra}&tab=${key}`}
-                onNavigate={(event) => {
-                  event.preventDefault();
-                  setOpen(false);
-                  navigate(`/?obra=${obra}&tab=${key}`);
-                }}
-              >
-                <span aria-hidden="true">{icon}</span>
-                {label}
-              </Link>
-            ))}
-            <p className="small muted">Selecione a obra no cabeçalho abaixo.</p>
-            <div className="mobile-menu-account">{children}</div>
-          </nav>
-        </>
-      )}
-    </div>
+    <nav
+      className="bottom-navigation no-print"
+      aria-label="Navegação principal"
+    >
+      {mainSections.map(([key, icon, label]) => (
+        <AppLink
+          key={key}
+          href={`/?obra=${obra}&tab=${key}`}
+          className={
+            sectionFor(tab) === key ? "bottom-link active" : "bottom-link"
+          }
+          aria-current={sectionFor(tab) === key ? "page" : undefined}
+        >
+          <span aria-hidden="true">{icon}</span>
+          {label}
+        </AppLink>
+      ))}
+    </nav>
   );
 }

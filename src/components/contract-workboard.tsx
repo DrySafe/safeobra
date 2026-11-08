@@ -1,6 +1,12 @@
 "use client";
 import { z } from "zod";
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import {
   contractItemInput,
   draftFromItem,
@@ -23,6 +29,7 @@ import {
   archiveContractItem,
   allocateContractPayment,
 } from "@/server/contract-actions";
+import { Dialog, ListPagination, searchKey } from "./simple-ui";
 import { DataForm, type Field } from "./forms";
 import { useReading, useRefresh } from "./navigation";
 const today = () =>
@@ -46,6 +53,7 @@ const numberMoney = (value: string) =>
   value === "" ? null : Math.round(Number(value) * 100);
 const quote = (item: ContractItem) => item.estimativa_json;
 export function ContractWorkboard({
+  contractDetails,
   obra,
   contract,
   items,
@@ -55,6 +63,7 @@ export function ContractWorkboard({
   admin,
   aiEnabled,
 }: {
+  contractDetails?: ReactNode;
   obra: string;
   contract: Contract;
   items: ContractItem[];
@@ -77,6 +86,14 @@ export function ContractWorkboard({
     [researching, setResearching] = useState(false),
     [message, setMessage] = useState(""),
     [filter, setFilter] = useState("todos"),
+    [search, setSearch] = useState(""),
+    [page, setPage] = useState(0),
+    [panel, setPanel] = useState<string | null>(null),
+    [selectedId, setSelectedId] = useState<string | null>(null),
+    [itemMode, setItemMode] = useState("detail"),
+    [draftPage, setDraftPage] = useState(0),
+    [draftIndex, setDraftIndex] = useState<number | null>(null),
+    [calculateAfterSave, setCalculateAfterSave] = useState(true),
     [text, setText] = useState(""),
     [drafts, setDrafts] = useState<ContractItemDraft[]>([]),
     [warnings, setWarnings] = useState<string[]>([]),
@@ -112,6 +129,11 @@ export function ContractWorkboard({
       try {
         const result = await action();
         setMessage(result.message);
+        if (result.ok) {
+          if (panel === "drafts") setDrafts([]);
+          setPanel(null);
+          setSelectedId(null);
+        }
       } catch {
         setMessage("Não foi possível conectar. Tente novamente.");
       }
@@ -122,11 +144,11 @@ export function ContractWorkboard({
     setBatch(crypto.randomUUID());
     setImportPayments(false);
     setWarnings([]);
-    setTimeout(
-      () =>
-        editor.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      0,
-    );
+    setPanel("drafts");
+    setSelectedId(null);
+    setDraftPage(0);
+    setDraftIndex(list.length === 1 ? 0 : null);
+    setCalculateAfterSave(list.some((i) => !i.id) && aiEnabled);
   }
   async function parseText() {
     setMessage("");
@@ -197,6 +219,7 @@ export function ContractWorkboard({
         setMessage(result.message);
         if (result.ok) {
           setDrafts([]);
+          setPanel(null);
           setWarnings([]);
           setText("");
           if (calculatePrices && result.itens?.length)
@@ -329,13 +352,44 @@ export function ContractWorkboard({
       refresh();
     }
   }
-  const shown = active.filter(
-    (i) =>
-      filter === "todos" ||
-      (filter === "pendentes" && i.percentual_executado < 100) ||
-      (filter === "concluidos" && i.percentual_executado === 100) ||
-      (filter === "extras" && i.classe === "extra"),
+  const shown = active
+    .filter(
+      (i) =>
+        (filter === "todos" ||
+          (filter === "pendentes" && i.percentual_executado < 100) ||
+          (filter === "concluidos" && i.percentual_executado === 100) ||
+          (filter === "extras" && i.classe === "extra")) &&
+        searchKey(`${i.nome} ${i.descricao}`).includes(searchKey(search)),
+    )
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true }));
+  const pages = Math.max(1, Math.ceil(shown.length / 6)),
+    currentPage = Math.min(page, pages - 1),
+    visible = shown.slice(currentPage * 6, (currentPage + 1) * 6);
+  const draftCurrent = Math.min(
+    draftPage,
+    Math.max(0, Math.ceil(drafts.length / 6) - 1),
   );
+  const selected = active.find((i) => i.id === selectedId),
+    row = selected ? metrics.rows.find((r) => r.item.id === selected.id) : null,
+    source = selected?.estimativa_json;
+  const referenced = active.filter((i) => i.estimativa_json?.calculo).length;
+  function closePanel() {
+    setPanel(null);
+    setSelectedId(null);
+    setItemMode("detail");
+  }
+  function suggest() {
+    try {
+      edit(allocateContractBudget(Number(contract.valor_geral), active));
+      setWarnings([
+        "A distribuição sugerida mantém o preço original. Revise as parcelas antes de salvar.",
+      ]);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Confira as estimativas.",
+      );
+    }
+  }
   const livePayments = payments.filter((p) => !p.anulado),
     pay = livePayments.find((p) => p.id === selectedPayment),
     payAllocations = allocations.filter(
@@ -347,192 +401,307 @@ export function ContractWorkboard({
       : 0;
   return (
     <div className="contract-workboard">
-      <h3>Serviços, estimativas e saldo da empreitada</h3>
-      <p className="small muted">
-        A pesquisa compara mercado e preço combinado. Pagamentos e descontos vêm
-        dos registros reais; concluir serviço não cria pagamento.
-      </p>
-      {!contract.itens_ativo ? (
-        <p className="notice">
-          A tabela preservará o plano anterior como histórico e aproveitará os
-          serviços e pagamentos já vinculados.{" "}
-          {admin && (
-            <button
-              type="button"
-              className="secondary"
-              disabled={pending || busy}
-              onClick={() => act(() => adoptContractItems(obra, contract.id))}
-            >
-              Organizar plano atual nesta tabela
-            </button>
-          )}
-        </p>
-      ) : (
+      {contract.itens_ativo ? (
         <>
-          <div className="cards estimate-cards">
-            <article className="card">
-              <span className="small muted">
-                Preço original + extras aprovados
-              </span>
-              <div className="value">{money(metrics.total)}</div>
-              <span className="small muted">
-                Original {money(metrics.base)} · extras {money(metrics.extras)}
-              </span>
-            </article>
-            <article className="card">
-              <span className="small muted">Avanço ponderado pelo valor</span>
-              <div className="value">
-                {metrics.progressKnown
-                  ? metrics.progress.toFixed(1) + "%"
-                  : "A completar plano"}
-              </div>
-              <span className="small muted">
-                {metrics.progressKnown
-                  ? "Faltam " + metrics.remainingProgress.toFixed(1) + "% · "
-                  : "Distribua o preço entre os itens · "}{" "}
-                {metrics.pendingCount} serviço(s) pendente(s)
-              </span>
-            </article>
-            <article className="card">
-              <span className="small muted">Saldo real da empreitada</span>
-              <div className="value">{money(metrics.remaining)}</div>
-              <span className="small muted">
-                Devido pelo executado: {money(metrics.due)} · adiantamento{" "}
-                {money(metrics.advance)}
-              </span>
-            </article>
-          </div>
-          <p className="small">
-            Incluídos distribuídos: {money(metrics.included)} de{" "}
-            {money(metrics.base)}.{" "}
-            {metrics.reserve > 0 && (
+          <dl className="contract-overview">
+            <div>
+              <dt>Contrato</dt>
+              <dd>{money(metrics.total)}</dd>
+            </div>
+            <div>
+              <dt>Pago líquido</dt>
+              <dd>{money(metrics.paid)}</dd>
+            </div>
+            <div>
+              <dt>Falta pagar</dt>
+              <dd>{money(metrics.remaining)}</dd>
+            </div>
+          </dl>
+          <div className="work-progress">
+            <div className="inline justify-between">
               <strong>
-                Falta alocar {money(metrics.reserve)} do preço original.
+                {metrics.progressKnown
+                  ? metrics.progress.toFixed(1).replace(".", ",") +
+                    "% concluído"
+                  : "Execução a organizar"}
               </strong>
-            )}{" "}
-            Referência de mercado: {money(metrics.market)}{" "}
-            {metrics.marketComplete
-              ? "(escopo completo pesquisado)"
-              : `(parcial: ${metrics.estimatedCount}/${metrics.itemCount} itens com estimativa)`}
-            .
-          </p>
+              <span className="small muted">
+                {metrics.pendingCount} pendente(s)
+              </span>
+            </div>
+            <progress
+              aria-label="Avanço da empreitada"
+              max={100}
+              value={metrics.progress}
+            />
+            <span className="small muted">
+              {metrics.progressKnown
+                ? "Faltam " +
+                  metrics.remainingProgress.toFixed(1).replace(".", ",") +
+                  "% · "
+                : "Informe o valor de cada serviço · "}
+              {referenced}/{active.length} preços encontrados
+            </span>
+          </div>
           {metrics.unassignedGross > 0 && (
-            <p className="notice">
-              Pagamentos a distribuir: {money(metrics.unassignedPaid)} líquidos
-              + {money(metrics.unassignedDiscount)} em descontos. Eles já
-              reduzem o saldo geral, mas só aparecerão como pagos por item após
-              o vínculo. Distribua antes de decidir novo pagamento por serviço.
-            </p>
-          )}
-        </>
-      )}
-      {admin && (
-        <>
-          <div className="inline contract-tools">
-            <button
-              type="button"
-              className="secondary"
-              disabled={pending || busy}
-              onClick={() => edit([newDraft()])}
-            >
-              + Adicionar item
-            </button>
-            {contract.itens_ativo && (
-              <>
-                <button
-                  type="button"
-                  disabled={
-                    pending ||
-                    busy ||
-                    !aiEnabled ||
-                    !active.some((i) => !i.estimativa_json?.calculo)
-                  }
-                  onClick={() =>
-                    research(active.filter((i) => !i.estimativa_json?.calculo))
-                  }
-                >
-                  Calcular preços da lista com IA
-                </button>
+            <div className="allocation-notice">
+              <div>
+                <span className="small muted">Pagamentos sem vínculo</span>
+                <strong>{money(metrics.unassignedPaid)}</strong>
+                {metrics.unassignedDiscount > 0 && (
+                  <span className="small muted">
+                    Descontos: {money(metrics.unassignedDiscount)}
+                  </span>
+                )}
+              </div>
+              {admin && (
                 <button
                   type="button"
                   className="secondary"
-                  disabled={
-                    pending ||
-                    busy ||
-                    !active.some((i) => i.classe === "incluido") ||
-                    active.some(
-                      (i) =>
-                        i.classe === "incluido" &&
-                        (i.valor_estimado === null ||
-                          Number(i.valor_estimado) <= 0),
-                    )
-                  }
-                  title="Pesquise os valores de todos os itens incluídos para sugerir a distribuição."
                   onClick={() => {
-                    try {
-                      edit(
-                        allocateContractBudget(
-                          Number(contract.valor_geral),
-                          active,
-                        ),
-                      );
-                      setWarnings([
-                        "Revise a distribuição do preço original pelas estimativas. Isso altera a ponderação dos serviços, não o total contratado nem os pagamentos.",
-                      ]);
-                    } catch (error) {
-                      setMessage(
-                        error instanceof Error
-                          ? error.message
-                          : "Confira as referências.",
-                      );
-                    }
+                    setMessage("");
+                    setPanel("allocation");
                   }}
                 >
-                  Sugerir distribuição do preço original
+                  Vincular
                 </button>
-              </>
-            )}
-            {researching && (
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="notice">
+          Organize os serviços e acompanhe valores e execução no mesmo lugar. O
+          plano e os pagamentos existentes serão preservados.
+          {admin && (
+            <button
+              type="button"
+              onClick={() => act(() => adoptContractItems(obra, contract.id))}
+              disabled={pending || busy}
+            >
+              Organizar serviços
+            </button>
+          )}
+        </p>
+      )}
+      <div className="board-toolbar">
+        {admin && (
+          <>
+            <button
+              type="button"
+              aria-label={
+                drafts.length ? "Continuar edição" : "Adicionar serviços"
+              }
+              disabled={pending || busy}
+              onClick={() => {
+                setMessage("");
+                setPanel(drafts.length ? "drafts" : "add");
+              }}
+            >
+              {drafts.length ? "Continuar" : "Adicionar"}
+            </button>
+            {active.some((i) => !i.estimativa_json?.calculo) && (
               <button
                 type="button"
                 className="secondary"
-                onClick={() => {
-                  stop.current = true;
-                  controller.current?.abort();
-                }}
+                aria-label="Calcular preços da lista"
+                disabled={pending || busy || !aiEnabled}
+                onClick={() =>
+                  research(active.filter((i) => !i.estimativa_json?.calculo))
+                }
               >
-                Parar pesquisa
+                Orçar lista
               </button>
             )}
-          </div>
-          {priceProgress && (
-            <div className="notice" role="status">
-              <strong>
-                Orçamento dos serviços: {priceProgress.done}/
-                {priceProgress.total}
-              </strong>
-              <p className="small">
-                {priceProgress.priced} com preço de referência.{" "}
-                {researching
-                  ? "Pesquisando a lista; os preços aparecem por grupo conforme ficam prontos. Mantenha a página aberta."
-                  : "Confira os valores e as unidades na tabela."}
-              </p>
-              <progress
-                aria-label="Serviços com pesquisa processada"
-                max={priceProgress.total}
-                value={priceProgress.done}
-                style={{ width: "100%" }}
+          </>
+        )}
+        <button
+          type="button"
+          className="secondary options-toggle"
+          aria-label="Opções da empreitada"
+          disabled={pending || busy}
+          onClick={() => {
+            setMessage("");
+            setPanel("options");
+          }}
+        >
+          ⋯
+        </button>
+      </div>
+      {researching && (
+        <div className="notice" role="status">
+          <strong>
+            Calculando preços: {priceProgress?.done ?? 0}/
+            {priceProgress?.total ?? 0}
+          </strong>
+          <progress
+            aria-label="Serviços com pesquisa processada"
+            max={priceProgress?.total ?? 1}
+            value={priceProgress?.done ?? 0}
+            style={{ width: "100%" }}
+          />
+          <p className="small">
+            {wait > 0
+              ? `A pesquisa continua em ${wait} s.`
+              : "Os resultados aparecem conforme ficam prontos."}
+          </p>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              stop.current = true;
+              controller.current?.abort();
+            }}
+          >
+            Parar pesquisa
+          </button>
+        </div>
+      )}
+      {message && !panel && !selected && (
+        <p role="status" className="notice">
+          {message}
+        </p>
+      )}
+      {contract.itens_ativo && (
+        <>
+          <div className="list-controls">
+            <label>
+              Buscar serviço
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(0);
+                }}
+                placeholder="Nome ou código"
               />
-            </div>
-          )}
-          {wait > 0 && (
-            <p role="status">
-              Limite temporário. A pesquisa continuará em {wait} s. Resultados
-              concluídos já estão salvos.
+            </label>
+            <label>
+              Exibir
+              <select
+                value={filter}
+                onChange={(e) => {
+                  setFilter(e.target.value);
+                  setPage(0);
+                }}
+              >
+                <option value="todos">Todos</option>
+                <option value="pendentes">A realizar</option>
+                <option value="concluidos">Concluídos</option>
+                <option value="extras">Extras</option>
+              </select>
+            </label>
+          </div>
+          <div className="compact-list service-list">
+            {visible.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="record-card service-card"
+                aria-label={`Abrir serviço ${item.nome}`}
+                onClick={() => {
+                  setSelectedId(item.id);
+                  setItemMode("detail");
+                  setMessage("");
+                }}
+              >
+                <span className="record-main">
+                  <strong>{item.nome}</strong>
+                  <span className="record-status">
+                    {item.percentual_executado === 100
+                      ? "Concluído"
+                      : item.percentual_executado > 0
+                        ? "Em andamento"
+                        : "A realizar"}
+                    {item.classe === "extra"
+                      ? item.aprovado
+                        ? " · Extra aprovado"
+                        : " · Extra a aprovar"
+                      : ""}
+                  </span>
+                  <span className="small muted">
+                    {item.valor_estimado !== null
+                      ? "Estimado: " + money(Number(item.valor_estimado))
+                      : item.estimativa_json?.calculo
+                        ? money(item.estimativa_json.calculo.mean) +
+                          " / " +
+                          item.estimativa_json.unidade
+                        : "Preço a calcular"}
+                  </span>
+                </span>
+                <span className="record-end">
+                  <strong>{item.percentual_executado}%</strong>
+                  <span aria-hidden="true">›</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          {!visible.length && (
+            <p className="empty">
+              {active.length
+                ? "Nenhum serviço encontrado."
+                : "Adicione serviços ou cole sua lista para começar."}
             </p>
           )}
-          <details className="contract-import" open={active.length === 0}>
-            <summary>Orçar lista de serviços com IA — texto ou arquivo</summary>
+          <ListPagination
+            page={currentPage}
+            pages={pages}
+            total={shown.length}
+            pageSize={6}
+            onPage={setPage}
+          />
+        </>
+      )}
+      <Dialog
+        open={Boolean(panel || selected)}
+        title={
+          selected
+            ? itemMode === "pay"
+              ? "Pagamento do serviço"
+              : itemMode === "sources"
+                ? "Preço e fontes"
+                : itemMode === "history"
+                  ? "Histórico do serviço"
+                  : selected.nome
+            : panel === "add"
+              ? "Adicionar serviços"
+              : panel === "drafts"
+                ? drafts.length > 1 && draftIndex !== null
+                  ? "Editar serviço da lista"
+                  : "Revisar serviços"
+                : panel === "allocation"
+                  ? "Vincular pagamentos"
+                  : panel === "contract"
+                    ? "Dados do contrato"
+                    : panel === "warnings"
+                      ? "Observações da IA"
+                      : "Opções da empreitada"
+        }
+        onClose={closePanel}
+        onBack={
+          selected && itemMode !== "detail"
+            ? () => setItemMode("detail")
+            : panel === "drafts" && drafts.length > 1 && draftIndex !== null
+              ? () => setDraftIndex(null)
+              : panel === "warnings"
+                ? () => setPanel("drafts")
+                : panel === "allocation" || panel === "contract"
+                  ? () => setPanel("options")
+                  : undefined
+        }
+      >
+        {message && (
+          <p role="status" className="notice">
+            {message}
+          </p>
+        )}
+        {panel === "add" && (
+          <section className="contract-import">
+            <p>
+              Descreva os serviços ou envie um arquivo. A IA prepara a lista
+              para você revisar e calcular os preços.
+            </p>
             <p className="small muted">
               Texto UTF-8 até 64 KB/16 mil caracteres e 60 serviços por arquivo.
               Cole ou descreva os serviços em linguagem natural. A IA identifica
@@ -584,17 +753,79 @@ export function ContractWorkboard({
             >
               Preparar orçamento com IA
             </button>
-          </details>
+
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => edit([newDraft()])}
+            >
+              Adicionar manualmente
+            </button>
+          </section>
+        )}
+        {panel === "drafts" && drafts.length > 0 && (
           <div ref={editor}>
-            {drafts.length > 0 && (
-              <section className="panel contract-drafts">
-                <h3>Revisar serviços antes de salvar</h3>
-                {warnings.map((w, i) => (
-                  <p key={i} className="notice">
-                    {w}
+            <section className="contract-drafts">
+              <h3>Revisar serviços antes de salvar</h3>
+              {warnings.length > 0 && (
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setPanel("warnings")}
+                >
+                  Observações da IA ({warnings.length})
+                </button>
+              )}
+              {drafts.length > 1 && draftIndex === null && (
+                <>
+                  <p className="small muted">
+                    {drafts.length} serviços. Toque em um item para ajustar os
+                    dados antes de salvar.
                   </p>
-                ))}
-                {drafts.map((item, index) => (
+                  <div className="compact-list draft-list">
+                    {drafts
+                      .slice(draftCurrent * 6, draftCurrent * 6 + 6)
+                      .map((d, n) => (
+                        <button
+                          type="button"
+                          className="record-card"
+                          key={d.id ?? draftCurrent * 6 + n}
+                          onClick={() => setDraftIndex(draftCurrent * 6 + n)}
+                          aria-label={`Revisar ${d.nome}`}
+                        >
+                          <span className="record-main">
+                            <strong>{d.nome}</strong>
+                            <span className="record-status">
+                              {d.classe === "extra"
+                                ? d.aprovado
+                                  ? "Extra aprovado"
+                                  : "Extra a aprovar"
+                                : "Incluído"}{" "}
+                              · {d.quantidade} {d.unidade}
+                            </span>
+                          </span>
+                          <span className="record-end">
+                            <span>
+                              {d.valor_cobrado === null
+                                ? "A definir"
+                                : money(d.valor_cobrado)}
+                            </span>
+                            <span aria-hidden="true">›</span>
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                  <ListPagination
+                    page={draftCurrent}
+                    pages={Math.max(1, Math.ceil(drafts.length / 6))}
+                    total={drafts.length}
+                    pageSize={6}
+                    onPage={setDraftPage}
+                  />
+                </>
+              )}
+              {drafts.map((item, index) =>
+                index === (drafts.length === 1 ? 0 : draftIndex) ? (
                   <fieldset key={item.id ?? index}>
                     <legend>Item {index + 1}</legend>
                     <div className="form-grid">
@@ -617,6 +848,7 @@ export function ContractWorkboard({
                       <label>
                         Incluído ou extra
                         <select
+                          aria-label="Incluído ou extra"
                           value={item.classe}
                           onChange={(e) =>
                             setDrafts((ds) =>
@@ -719,6 +951,7 @@ export function ContractWorkboard({
                       <label>
                         Unidade
                         <select
+                          aria-label="Unidade"
                           value={item.unidade}
                           onChange={(e) =>
                             setDrafts((ds) =>
@@ -808,503 +1041,581 @@ export function ContractWorkboard({
                     <button
                       type="button"
                       className="secondary"
-                      onClick={() =>
-                        setDrafts((ds) => ds.filter((_, i) => i !== index))
-                      }
+                      onClick={() => {
+                        setDrafts((ds) => ds.filter((_, i) => i !== index));
+                        setDraftIndex(null);
+                      }}
                     >
                       Retirar da prévia
                     </button>
                   </fieldset>
-                ))}
-                {drafts.some((i) => (i.valor_pago_informado ?? 0) > 0) && (
-                  <div className="notice">
+                ) : null,
+              )}
+              {drafts.length > 1 && draftIndex !== null ? (
+                <button type="button" onClick={() => setDraftIndex(null)}>
+                  Concluir edição
+                </button>
+              ) : (
+                <>
+                  {drafts.some((i) => (i.valor_pago_informado ?? 0) > 0) && (
+                    <div className="notice">
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          checked={importPayments}
+                          onChange={(e) => setImportPayments(e.target.checked)}
+                        />
+                        Registrar os pagamentos históricos informados, total{" "}
+                        {money(
+                          drafts.reduce(
+                            (s, i) => s + (i.valor_pago_informado ?? 0),
+                            0,
+                          ),
+                        )}
+                      </label>
+                      <p className="small">
+                        Marque apenas se esses pagamentos ainda não estiverem no
+                        histórico. Serão registrados como líquidos, sem aplicar
+                        descontos pendentes. Sem marcar, nenhum pagamento é
+                        criado.
+                      </p>
+                      {importPayments && (
+                        <label>
+                          Data para pagamentos sem data no arquivo
+                          <input
+                            type="date"
+                            value={paymentDate}
+                            onChange={(e) => setPaymentDate(e.target.value)}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  )}
+                  <p className="small muted">
+                    Incluídos devem caber no preço original. Extras aumentam o
+                    total apenas quando aprovados. Alterar parcelas muda o
+                    avanço ponderado; os pagamentos existentes são preservados.
+                  </p>
+
+                  {aiEnabled && (
                     <label className="check">
                       <input
                         type="checkbox"
-                        checked={importPayments}
-                        onChange={(e) => setImportPayments(e.target.checked)}
+                        checked={calculateAfterSave}
+                        onChange={(e) =>
+                          setCalculateAfterSave(e.target.checked)
+                        }
                       />
-                      Registrar os pagamentos históricos informados, total{" "}
-                      {money(
-                        drafts.reduce(
-                          (s, i) => s + (i.valor_pago_informado ?? 0),
-                          0,
-                        ),
-                      )}
+                      Calcular preços com IA após salvar
                     </label>
-                    <p className="small">
-                      Marque apenas se esses pagamentos ainda não estiverem no
-                      histórico. Serão registrados como líquidos, sem aplicar
-                      descontos pendentes. Sem marcar, nenhum pagamento é
-                      criado.
-                    </p>
-                    {importPayments && (
-                      <label>
-                        Data para pagamentos sem data no arquivo
-                        <input
-                          type="date"
-                          value={paymentDate}
-                          onChange={(e) => setPaymentDate(e.target.value)}
-                        />
-                      </label>
+                  )}
+                  {drafts.length === 1 &&
+                    drafts[0].id &&
+                    drafts[0].percentual_executado === 0 &&
+                    !allocations.some((a) => a.item_id === drafts[0].id) && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={pending || busy}
+                        onClick={() =>
+                          act(() =>
+                            archiveContractItem(
+                              obra,
+                              contract.id,
+                              drafts[0].id!,
+                            ),
+                          )
+                        }
+                      >
+                        Arquivar serviço
+                      </button>
                     )}
-                  </div>
-                )}
-                <p className="small muted">
-                  Incluídos devem caber no preço original. Extras aumentam o
-                  total apenas quando aprovados. Alterar parcelas muda o avanço
-                  ponderado; os pagamentos existentes são preservados.
-                </p>
-                <div className="inline">
                   <button
                     type="button"
-                    disabled={pending || busy || !drafts.length || !aiEnabled}
-                    onClick={() => saveDrafts(true)}
-                  >
-                    Salvar e calcular preços da lista
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
                     disabled={pending || busy || !drafts.length}
-                    onClick={() => saveDrafts()}
+                    onClick={() => saveDrafts(calculateAfterSave)}
                   >
-                    Salvar sem pesquisar preços
+                    {calculateAfterSave
+                      ? "Salvar e calcular preços"
+                      : "Salvar alterações"}
                   </button>
                   <button
                     type="button"
-                    className="secondary"
-                    onClick={() => setDrafts([])}
+                    className="text-button"
+                    disabled={pending || busy}
+                    onClick={() => {
+                      setDrafts([]);
+                      setWarnings([]);
+                      setPanel(null);
+                      setMessage("");
+                    }}
                   >
-                    Cancelar prévia
+                    Descartar alterações
                   </button>
-                </div>
-              </section>
-            )}
+                </>
+              )}
+            </section>
           </div>
-        </>
-      )}
-      {message && (
-        <p role="status" className="notice">
-          {message}
-        </p>
-      )}
-      {contract.itens_ativo && (
-        <>
-          <label className="contract-filter">
-            Exibir serviços
-            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="todos">Todos</option>
-              <option value="pendentes">A realizar / em andamento</option>
-              <option value="concluidos">Já realizados</option>
-              <option value="extras">Extras</option>
-            </select>
-          </label>
-          {shown.length ? (
-            <div className="services-table-wrap">
-              <table className="services-table">
-                <caption>
-                  Valores em reais; estimativa de mercado não altera o preço
-                  combinado.
-                </caption>
-                <thead>
-                  <tr>
-                    {[
-                      "Serviço",
-                      "Classificação",
-                      "Execução",
-                      "Estimado (mercado)",
-                      "Cobrado / alocado",
-                      "Pago líquido",
-                      "Falta pagar",
-                      "Ações e fontes",
-                    ].map((h) => (
-                      <th scope="col" key={h}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map((item) => {
-                    const row = metrics.rows.find(
-                      (r) => r.item.id === item.id,
-                    )!;
-                    const source = quote(item);
-                    return (
-                      <tr key={item.id}>
-                        <td data-label="Serviço">
-                          <strong>{item.nome}</strong>
-                          <p className="small muted">
-                            {item.quantidade} {item.unidade}
-                          </p>
-                          <p className="small">{item.descricao}</p>
-                        </td>
-                        <td data-label="Classificação">
-                          {item.classe === "incluido"
-                            ? "Incluído no preço"
-                            : item.aprovado
-                              ? "Extra aprovado"
-                              : "Extra a aprovar"}
-                        </td>
-                        <td data-label="Execução">
-                          {item.percentual_executado}%
-                          <p className="small muted">
-                            {item.percentual_executado === 100
-                              ? "Concluído"
-                              : item.percentual_executado > 0
-                                ? "Em andamento"
-                                : "A realizar"}
-                          </p>
-                          {admin && item.percentual_executado < 100 && (
-                            <button
-                              type="button"
-                              className="secondary"
-                              disabled={pending || busy}
-                              onClick={() =>
-                                act(() =>
-                                  saveSingleContractItem(
-                                    obra,
-                                    contract.id,
-                                    draftFromItem(item, {
-                                      percentual_executado: 100,
-                                    }),
-                                  ),
-                                )
-                              }
-                            >
-                              Concluir
-                            </button>
-                          )}
-                        </td>
-                        <td data-label="Estimado (mercado)">
-                          {item.valor_estimado !== null ? (
-                            <>
-                              Total estimado:{" "}
-                              {money(Number(item.valor_estimado))}
-                            </>
-                          ) : source?.calculo ? (
-                            source.unidade === "diária" ? (
-                              "Total depende da duração"
-                            ) : (
-                              "Total depende da medição"
-                            )
-                          ) : item.pesquisado_em ? (
-                            "Sem preço comparável encontrado"
-                          ) : (
-                            "Preço a calcular"
-                          )}
-                          {source?.calculo && (
-                            <p className="small">
-                              <strong>
-                                {money(source.calculo.mean)} / {source.unidade}
-                              </strong>
-                              <br />
-                              Faixa unitária: {money(
-                                source.calculo.minimum,
-                              )} a {money(source.calculo.maximum)}
-                            </p>
-                          )}
-                          {source?.calculo && item.valor_estimado === null && (
-                            <p className="small muted">
-                              {source.unidade === "diária"
-                                ? "Diária individual de referência. Informe duração e equipe para calcular o custo do serviço."
-                                : "Preço por unidade disponível. Informe a quantidade e a unidade do serviço para calcular o total."}
-                            </p>
-                          )}
-                          {item.estimado_minimo !== null &&
-                            item.estimado_maximo !== null && (
-                              <p className="small muted">
-                                {money(Number(item.estimado_minimo))} a{" "}
-                                {money(Number(item.estimado_maximo))}
-                              </p>
-                            )}
-                          {item.pesquisado_em && (
-                            <p className="small muted">
-                              {dateBR(item.pesquisado_em)}
-                            </p>
-                          )}
-                        </td>
-                        <td data-label="Cobrado / alocado">
-                          {item.valor_cobrado === null
-                            ? "A definir"
-                            : money(Number(item.valor_cobrado))}
-                          {item.valor_estimado !== null &&
-                            item.valor_cobrado !== null && (
-                              <p className="small muted">
-                                Diferença para referência:{" "}
-                                {money(
-                                  Number(item.valor_cobrado) -
-                                    Number(item.valor_estimado),
-                                )}
-                              </p>
-                            )}
-                        </td>
-                        <td data-label="Pago líquido">
-                          {money(row.paid)}
-                          {row.discount > 0 && (
-                            <p className="small muted">
-                              Descontos: {money(row.discount)}
-                            </p>
-                          )}
-                        </td>
-                        <td data-label="Falta pagar">
-                          {item.valor_cobrado === null
-                            ? "A definir"
-                            : item.classe === "extra" && !item.aprovado
-                              ? "A aprovar"
-                              : money(row.remaining)}
-                          <p className="small muted">
-                            Devido pelo executado:{" "}
-                            {item.valor_cobrado === null
-                              ? "parcela a definir"
-                              : item.classe === "extra" && !item.aprovado
-                                ? "depende de aprovação"
-                                : money(row.due)}
-                          </p>
-                          {row.advance > 0 && (
-                            <p className="small muted">
-                              Antecipado ao item: {money(row.advance)}
-                            </p>
-                          )}
-                        </td>
-                        <td data-label="Ações e fontes">
-                          {admin && (
-                            <>
-                              <button
-                                type="button"
-                                className="secondary"
-                                disabled={pending || busy}
-                                onClick={() => edit([draftFromItem(item)])}
-                              >
-                                Editar item
-                              </button>
-                              <button
-                                type="button"
-                                className="secondary"
-                                disabled={pending || busy || !aiEnabled}
-                                onClick={() => research([item])}
-                              >
-                                Recalcular preço com IA
-                              </button>
-                              {item.percentual_executado === 0 &&
-                                !allocations.some(
-                                  (a) => a.item_id === item.id,
-                                ) && (
-                                  <button
-                                    type="button"
-                                    className="secondary"
-                                    disabled={pending || busy}
-                                    onClick={() =>
-                                      act(() =>
-                                        archiveContractItem(
-                                          obra,
-                                          contract.id,
-                                          item.id,
-                                        ),
-                                      )
-                                    }
-                                  >
-                                    Arquivar
-                                  </button>
-                                )}
-                              {(item.classe === "incluido" ||
-                                item.aprovado) && (
-                                <details>
-                                  <summary>Pagar / adiantar este item</summary>
-                                  <DataForm
-                                    kind="payment"
-                                    obra={obra}
-                                    fields={paymentFields(contract, item)}
-                                  />
-                                </details>
-                              )}
-                            </>
-                          )}
-                          {researchStatus[item.id] && (
-                            <p className="small" role="status">
-                              {researchStatus[item.id]}
-                            </p>
-                          )}
-                          {source && (
-                            <details>
-                              <summary>Ver pesquisa e fontes</summary>
-                              <p className="small">{source.observacoes}</p>
-                              {source.aviso_regional && (
-                                <p className="small">{source.aviso_regional}</p>
-                              )}
-                              {source.perguntas.map((q, i) => (
-                                <p className="small" key={i}>
-                                  {q}
-                                </p>
-                              ))}
-                              {source.referencias.map((ref) => (
-                                <p className="small" key={ref.url}>
-                                  <a
-                                    href={ref.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    {ref.titulo} ↗
-                                  </a>
-                                  <br />
-                                  {ref.trecho_preco}
-                                </p>
-                              ))}
-                            </details>
-                          )}
-                          <details>
-                            <summary>Histórico do avanço</summary>
-                            {executions
-                              .filter((e) => e.item_id === item.id)
-                              .map((e) => (
-                                <p className="small" key={e.id}>
-                                  {dateBR(e.data)} · {e.percentual}% ·{" "}
-                                  {e.observacoes}
-                                </p>
-                              ))}
-                          </details>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p>
-              Nenhum serviço neste filtro. Adicione itens ou importe a lista da
-              empreitada.
+        )}
+        {panel === "warnings" &&
+          warnings.map((w, i) => (
+            <p className="notice" key={i}>
+              {w}
             </p>
-          )}
-          {admin && livePayments.length > 0 && (
-            <details className="contract-allocation">
-              <summary>Distribuir pagamentos existentes entre serviços</summary>
-              <p className="small">
-                Este controle vincula dinheiro/descontos já registrados. Não
-                cria pagamentos nem altera o total pago.
-              </p>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  act(() =>
-                    allocateContractPayment(obra, contract.id, {
-                      pagamento_id: selectedPayment,
-                      item_id: selectedItem,
-                      valor_bruto: Math.round(Number(allocationGross) * 100),
-                      desconto: Math.round(Number(allocationDiscount) * 100),
-                    }),
-                  );
+          ))}
+        {panel === "options" && (
+          <>
+            {contractDetails && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setMessage("");
+                  setPanel("contract");
                 }}
               >
-                <div className="form-grid">
-                  <label>
-                    Pagamento
-                    <select
-                      required
-                      value={selectedPayment}
-                      onChange={(e) => setSelectedPayment(e.target.value)}
-                    >
-                      <option value="">Selecione</option>
-                      {livePayments.map((p) => (
-                        <option value={p.id} key={p.id}>
-                          {p.referencia} · líquido {money(Number(p.valor))}
+                Dados do contrato e arquivos
+              </button>
+            )}
+            <dl className="detail-values">
+              <div>
+                <dt>Preço original</dt>
+                <dd>{money(metrics.base)}</dd>
+              </div>
+              <div>
+                <dt>Extras aprovados</dt>
+                <dd>{money(metrics.extras)}</dd>
+              </div>
+              <div>
+                <dt>Descontos aplicados</dt>
+                <dd>{money(metrics.discount)}</dd>
+              </div>
+              <div>
+                <dt>Devido pelo executado</dt>
+                <dd>{money(metrics.due)}</dd>
+              </div>
+              <div>
+                <dt>Adiantamento</dt>
+                <dd>{money(metrics.advance)}</dd>
+              </div>
+              <div>
+                <dt>Mercado (totais conhecidos)</dt>
+                <dd>{money(metrics.market)}</dd>
+              </div>
+            </dl>
+            <p className="small muted">
+              Parcela distribuída: {money(metrics.included)} de{" "}
+              {money(metrics.base)}.{" "}
+              {metrics.reserve > 0
+                ? "Falta distribuir " + money(metrics.reserve) + "."
+                : ""}
+            </p>
+            {admin && (
+              <div className="option-actions">
+                <button className="secondary" type="button" onClick={suggest}>
+                  Sugerir parcelas pelo preço da IA
+                </button>
+                {livePayments.length > 0 && (
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => setPanel("allocation")}
+                  >
+                    Vincular pagamentos aos serviços
+                  </button>
+                )}
+              </div>
+            )}
+            <a
+              className="button secondary"
+              href={`/?obra=${obra}&tab=pagamentos&contrato=${contract.id}`}
+            >
+              Abrir financeiro do contrato
+            </a>
+            <a
+              className="button secondary"
+              href={`/?obra=${obra}&tab=estimativas`}
+            >
+              Consultar preço avulso
+            </a>
+          </>
+        )}
+        {panel === "contract" && contractDetails}
+        {panel === "allocation" && admin && (
+          <section className="contract-allocation">
+            <p className="small">
+              Este controle vincula dinheiro/descontos já registrados. Não cria
+              pagamentos nem altera o total pago.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                act(() =>
+                  allocateContractPayment(obra, contract.id, {
+                    pagamento_id: selectedPayment,
+                    item_id: selectedItem,
+                    valor_bruto: Math.round(Number(allocationGross) * 100),
+                    desconto: Math.round(Number(allocationDiscount) * 100),
+                  }),
+                );
+              }}
+            >
+              <div className="form-grid">
+                <label>
+                  Pagamento
+                  <select
+                    required
+                    aria-label="Pagamento"
+                    value={selectedPayment}
+                    onChange={(e) => setSelectedPayment(e.target.value)}
+                  >
+                    <option value="">Selecione</option>
+                    {livePayments.map((p) => (
+                      <option value={p.id} key={p.id}>
+                        {p.referencia} · líquido {money(Number(p.valor))}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Serviço
+                  <select
+                    required
+                    aria-label="Serviço para vincular"
+                    value={selectedItem}
+                    onChange={(e) => setSelectedItem(e.target.value)}
+                  >
+                    <option value="">Selecione</option>
+                    {active
+                      .filter((i) => i.classe === "incluido" || i.aprovado)
+                      .map((i) => (
+                        <option value={i.id} key={i.id}>
+                          {i.nome}
                         </option>
                       ))}
-                    </select>
-                  </label>
-                  <label>
-                    Serviço
-                    <select
-                      required
-                      value={selectedItem}
-                      onChange={(e) => setSelectedItem(e.target.value)}
-                    >
-                      <option value="">Selecione</option>
-                      {active
-                        .filter((i) => i.classe === "incluido" || i.aprovado)
-                        .map((i) => (
-                          <option value={i.id} key={i.id}>
-                            {i.nome}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                  <label>
-                    Bruto a vincular (R$)
-                    <input
-                      required
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={allocationGross}
-                      onChange={(e) => setAllocationGross(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Desconto já aplicado a vincular (R$)
-                    <input
-                      required
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={allocationDiscount}
-                      onChange={(e) => setAllocationDiscount(e.target.value)}
-                    />
-                  </label>
+                  </select>
+                </label>
+                <label>
+                  Bruto a vincular (R$)
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={allocationGross}
+                    onChange={(e) => setAllocationGross(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Desconto já aplicado a vincular (R$)
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={allocationDiscount}
+                    onChange={(e) => setAllocationDiscount(e.target.value)}
+                  />
+                </label>
+              </div>
+              {pay && (
+                <p className="small">
+                  Bruto ainda a distribuir neste pagamento:{" "}
+                  {money(availableGross)}. Vincule o bruto incluindo eventual
+                  desconto; o pago líquido será bruto menos desconto.
+                </p>
+              )}
+              <button disabled={pending || busy} type="submit">
+                Salvar vínculo do pagamento
+              </button>
+            </form>
+            {allocations
+              .filter((a) => livePayments.some((p) => p.id === a.pagamento_id))
+              .map((a) => (
+                <p className="small" key={a.id}>
+                  {
+                    livePayments.find((p) => p.id === a.pagamento_id)
+                      ?.referencia
+                  }{" "}
+                  →{" "}
+                  {active.find((i) => i.id === a.item_id)?.nome ??
+                    "Item do histórico"}
+                  : {money(Number(a.valor_bruto) - Number(a.desconto))} líquidos
+                  + {money(Number(a.desconto))} desconto{" "}
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={pending || busy}
+                    onClick={() =>
+                      act(() =>
+                        allocateContractPayment(obra, contract.id, {
+                          pagamento_id: a.pagamento_id,
+                          item_id: a.item_id,
+                          valor_bruto: 0,
+                          desconto: 0,
+                        }),
+                      )
+                    }
+                  >
+                    Desvincular
+                  </button>
+                </p>
+              ))}
+          </section>
+        )}
+        {selected && row && itemMode === "detail" && (
+          <>
+            <p className="record-status">
+              {selected.classe === "extra"
+                ? selected.aprovado
+                  ? "Extra aprovado"
+                  : "Extra a aprovar"
+                : "Incluído no contrato"}{" "}
+              · {selected.percentual_executado}% executado
+            </p>
+            <p>{selected.descricao}</p>
+            <p className="small muted">
+              Medição: {selected.quantidade} {selected.unidade}
+            </p>
+            <dl className="detail-values">
+              <div>
+                <dt>Estimado pela IA</dt>
+                <dd>
+                  {selected.valor_estimado !== null
+                    ? money(Number(selected.valor_estimado))
+                    : source?.calculo
+                      ? money(source.calculo.mean) + " / " + source.unidade
+                      : "Preço a calcular"}
+                </dd>
+              </div>
+              <div>
+                <dt>Cobrado / parcela</dt>
+                <dd>
+                  {selected.valor_cobrado === null
+                    ? "A definir"
+                    : money(Number(selected.valor_cobrado))}
+                </dd>
+              </div>
+              <div>
+                <dt>Pago líquido</dt>
+                <dd>{money(row.paid)}</dd>
+              </div>
+              <div>
+                <dt>Falta pagar</dt>
+                <dd>
+                  {selected.valor_cobrado === null
+                    ? "A definir"
+                    : selected.classe === "extra" && !selected.aprovado
+                      ? "A aprovar"
+                      : money(row.remaining)}
+                </dd>
+              </div>
+              <div>
+                <dt>Devido pelo executado</dt>
+                <dd>{money(row.due)}</dd>
+              </div>
+              {row.discount > 0 && (
+                <div>
+                  <dt>Descontos</dt>
+                  <dd>{money(row.discount)}</dd>
                 </div>
-                {pay && (
-                  <p className="small">
-                    Bruto ainda a distribuir neste pagamento:{" "}
-                    {money(availableGross)}. Vincule o bruto incluindo eventual
-                    desconto; o pago líquido será bruto menos desconto.
-                  </p>
-                )}
-                <button disabled={pending || busy} type="submit">
-                  Salvar vínculo do pagamento
-                </button>
-              </form>
-              {allocations
-                .filter((a) =>
-                  livePayments.some((p) => p.id === a.pagamento_id),
-                )
-                .map((a) => (
-                  <p className="small" key={a.id}>
-                    {
-                      livePayments.find((p) => p.id === a.pagamento_id)
-                        ?.referencia
-                    }{" "}
-                    →{" "}
-                    {active.find((i) => i.id === a.item_id)?.nome ??
-                      "Item do histórico"}
-                    : {money(Number(a.valor_bruto) - Number(a.desconto))}{" "}
-                    líquidos + {money(Number(a.desconto))} desconto{" "}
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={pending || busy}
-                      onClick={() =>
-                        act(() =>
-                          allocateContractPayment(obra, contract.id, {
-                            pagamento_id: a.pagamento_id,
-                            item_id: a.item_id,
-                            valor_bruto: 0,
-                            desconto: 0,
+              )}
+              {row.advance > 0 && (
+                <div>
+                  <dt>Antecipado ao serviço</dt>
+                  <dd>{money(row.advance)}</dd>
+                </div>
+              )}
+            </dl>
+            <div className="detail-links">
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setItemMode("sources")}
+              >
+                Preço e fontes
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setItemMode("history")}
+              >
+                Histórico
+              </button>
+            </div>
+            {admin && (
+              <div className="dialog-actions">
+                {selected.percentual_executado < 100 && (
+                  <button
+                    type="button"
+                    disabled={pending || busy}
+                    onClick={() =>
+                      act(() =>
+                        saveSingleContractItem(
+                          obra,
+                          contract.id,
+                          draftFromItem(selected, {
+                            percentual_executado: 100,
                           }),
-                        )
-                      }
-                    >
-                      Desvincular
-                    </button>
+                        ),
+                      )
+                    }
+                  >
+                    Marcar concluído
+                  </button>
+                )}
+                {(selected.classe === "incluido" || selected.aprovado) && (
+                  <button
+                    type="button"
+                    className={
+                      selected.percentual_executado < 100 ? "secondary" : ""
+                    }
+                    disabled={pending || busy}
+                    onClick={() => setItemMode("pay")}
+                  >
+                    Registrar pagamento
+                  </button>
+                )}
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={pending || busy}
+                  onClick={() => edit([draftFromItem(selected)])}
+                >
+                  Editar serviço
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {selected && itemMode === "pay" && admin && (
+          <DataForm
+            kind="payment"
+            obra={obra}
+            fields={paymentFields(contract, selected)}
+            title="Registrar pagamento"
+            onSaved={() => {
+              closePanel();
+              setMessage("Pagamento registrado.");
+            }}
+          />
+        )}
+        {selected && itemMode === "sources" && (
+          <>
+            {source ? (
+              <>
+                <dl className="detail-values">
+                  <div>
+                    <dt>Preço por unidade</dt>
+                    <dd>
+                      {source.calculo
+                        ? money(source.calculo.mean) + " / " + source.unidade
+                        : "Sem referência comparável"}
+                    </dd>
+                  </div>
+                  {source.calculo && (
+                    <div>
+                      <dt>Faixa por unidade</dt>
+                      <dd>
+                        {money(source.calculo.minimum)} a{" "}
+                        {money(source.calculo.maximum)}
+                      </dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt>Total estimado</dt>
+                    <dd>
+                      {selected.valor_estimado !== null
+                        ? money(Number(selected.valor_estimado))
+                        : source.unidade === "diária"
+                          ? "Informe duração e equipe"
+                          : "Informe as medidas para o total"}
+                    </dd>
+                  </div>
+                </dl>
+                <p>{source.observacoes}</p>
+                {source.aviso_regional && (
+                  <p className="notice">{source.aviso_regional}</p>
+                )}
+                {source.perguntas.map((q, i) => (
+                  <p className="small" key={i}>
+                    {q}
                   </p>
                 ))}
-            </details>
-          )}
-        </>
-      )}
+                {source.referencias.map((ref, i) => (
+                  <div className="source-row" key={i}>
+                    <a href={ref.url} target="_blank" rel="noopener noreferrer">
+                      {ref.titulo} ↗
+                    </a>
+                    <p className="small muted">{ref.trecho_preco}</p>
+                  </div>
+                ))}
+                {selected.pesquisado_em && (
+                  <p className="small muted">
+                    Consultado em {dateBR(selected.pesquisado_em)}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p>O preço ainda não foi pesquisado.</p>
+            )}
+            {admin && (
+              <button
+                type="button"
+                disabled={pending || busy || !aiEnabled}
+                onClick={() => {
+                  closePanel();
+                  void research([selected]);
+                }}
+              >
+                Recalcular preço com IA
+              </button>
+            )}
+          </>
+        )}
+        {selected && itemMode === "history" && (
+          <>
+            <h3>Execução</h3>
+            {executions
+              .filter((e) => e.item_id === selected.id)
+              .map((e) => (
+                <p className="history-row" key={e.id}>
+                  {dateBR(e.data)} · {e.percentual}% · {e.observacoes}
+                </p>
+              ))}
+            {!executions.some((e) => e.item_id === selected.id) && (
+              <p className="small muted">Nenhum avanço registrado.</p>
+            )}
+            <h3>Pagamentos vinculados</h3>
+            {allocations
+              .filter(
+                (a) =>
+                  a.item_id === selected.id &&
+                  livePayments.some((p) => p.id === a.pagamento_id),
+              )
+              .map((a) => (
+                <p key={a.id}>
+                  {
+                    livePayments.find((p) => p.id === a.pagamento_id)
+                      ?.referencia
+                  }{" "}
+                  · {money(Number(a.valor_bruto) - Number(a.desconto))} líquidos
+                  + {money(Number(a.desconto))} em descontos
+                </p>
+              ))}
+            <a
+              className="button secondary"
+              href={`/?obra=${obra}&tab=pagamentos&contrato=${contract.id}`}
+            >
+              Ver pagamentos no financeiro
+            </a>
+          </>
+        )}
+      </Dialog>
     </div>
   );
 }
+
 function paymentFields(contract: Contract, item: ContractItem): Field[] {
   return [
     {

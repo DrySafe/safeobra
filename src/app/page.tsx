@@ -4,6 +4,11 @@ import {
   MobileMenu,
   QueryForm,
 } from "@/components/navigation";
+import { ActionSheet, RecordList } from "@/components/simple-ui";
+import { mainSections, sectionFor } from "@/lib/app-navigation";
+import { AiServiceAssistant } from "@/components/ai-service-assistant";
+import { ContractPayments } from "@/components/contract-payments";
+import { RecordFiles as Files } from "@/components/record-files";
 import { db } from "@/lib/supabase/server";
 import { session } from "@/server/access";
 import {
@@ -38,11 +43,12 @@ import {
 } from "@/lib/contract-items";
 import { serviceUnits, type CostSample } from "@/lib/estimates";
 const tabs = [
-  ["dashboard", "◫", "Visão geral"],
-  ["gastos", "↗", "Gastos"],
-  ["equipe", "▤", "Empreitada"],
+  ["dashboard", "◫", "Resumo"],
+  ["gastos", "↗", "Compras e despesas"],
+  ["equipe", "▤", "Serviços"],
   ["diario", "▧", "Diário da obra"],
   ["relatorios", "▥", "Relatórios"],
+  ["pagamentos", "↗", "Pagamentos da equipe"],
   ["estimativas", "≈", "Estimativa de serviços"],
   ["membros", "♧", "Equipe e convites"],
 ];
@@ -113,6 +119,15 @@ const expenseFields: Field[] = [
     optional: true,
   },
 ];
+function prefill(fields: Field[], record: object): Field[] {
+  const row = record as Record<string, unknown>;
+  return fields.map((f) => ({
+    ...f,
+    value: f.scale
+      ? String(Number(row[f.name] ?? 0) / f.scale)
+      : String(row[f.name] ?? ""),
+  }));
+}
 function Card({
   label,
   value,
@@ -142,45 +157,6 @@ function Progress({ value }: { value: number }) {
     >
       <span style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
     </div>
-  );
-}
-function Files({
-  rows,
-  obra,
-  entity,
-  id,
-  canUpload,
-}: {
-  rows: M.Attachment[];
-  obra: string;
-  entity: string;
-  id: string;
-  canUpload: boolean;
-}) {
-  return (
-    <details className="no-print">
-      <summary>
-        {entity === "gastos"
-          ? canUpload
-            ? "📎 Enviar nota fiscal / ver comprovantes"
-            : "Notas fiscais e comprovantes"
-          : "Anexos"}{" "}
-        (
-        {
-          rows.filter((a) => a.entidade_id === id && a.entidade === entity)
-            .length
-        }
-        )
-      </summary>
-      <div className="attachments">
-        {rows
-          .filter((a) => a.entidade_id === id && a.entidade === entity)
-          .map((a) => (
-            <Attachment key={a.id} obra={obra} id={a.id} />
-          ))}
-      </div>
-      {canUpload && <Upload obra={obra} entity={entity} id={id} />}
-    </details>
   );
 }
 export default async function Home({
@@ -250,22 +226,32 @@ export default async function Home({
     contratos_mao_de_obra: [
       "dashboard",
       "equipe",
+      "pagamentos",
       "relatorios",
       "estimativas",
     ].includes(tab),
-    servicos: ["dashboard", "equipe", "diario", "estimativas"].includes(tab),
-    pagamentos: ["dashboard", "equipe", "relatorios"].includes(tab),
-    descontos_profissional: tab === "equipe",
+    servicos: [
+      "dashboard",
+      "equipe",
+      "pagamentos",
+      "diario",
+      "estimativas",
+    ].includes(tab),
+    pagamentos: ["dashboard", "equipe", "pagamentos", "relatorios"].includes(
+      tab,
+    ),
+    descontos_profissional: ["equipe", "pagamentos"].includes(tab),
     ocorrencias: ["dashboard", "diario", "relatorios"].includes(tab),
-    anexos: ["gastos", "equipe", "diario"].includes(tab),
+    anexos: ["gastos", "equipe", "pagamentos", "diario"].includes(tab),
     execucoes: tab === "equipe",
     empreitada_itens: [
       "dashboard",
       "equipe",
+      "pagamentos",
       "relatorios",
       "estimativas",
     ].includes(tab),
-    pagamento_itens: tab === "equipe",
+    pagamento_itens: ["equipe", "pagamentos"].includes(tab),
     empreitada_execucoes: tab === "equipe",
   };
   const href = (t: string) => `/?obra=${obraId}&tab=${t}`;
@@ -461,6 +447,8 @@ export default async function Home({
     { name: "responsavel", label: "Responsável", optional: true },
     { name: "descricao", label: "Descrição", type: "textarea", optional: true },
   ];
+  const selectedContract =
+    contracts.find((c) => c.id === query.contrato) ?? contracts[0];
   const visibleExpenses = expenses.filter(
     (e) =>
       (!query.categoria || e.categoria === query.categoria) &&
@@ -474,30 +462,19 @@ export default async function Home({
   );
   return (
     <div className="shell">
-      <MobileMenu tabs={tabs} tab={tab} obra={obraId} obraNome={obra.nome}>
-        <span className="small muted">{user.email}</span>
-        <div className="inline">
-          <Theme />
-          <form action={logout}>
-            <button className="secondary">Sair</button>
-          </form>
-        </div>
-      </MobileMenu>
+      <MobileMenu tab={tab} obra={obraId} />
       <aside className="sidebar no-print">
         <Link href="/" className="logo">
           <span className="mark">S</span>SafeObra
           <span className="text-emerald-600">.</span>
         </Link>
-        <div className="small muted">
-          MENOS IMPREVISTOS.
-          <br />
-          MAIS CONQUISTAS.
-        </div>
         <nav aria-label="Módulos">
-          {tabs.map(([key, icon, label]) => (
+          {mainSections.map(([key, icon, label]) => (
             <Link
-              aria-current={tab === key ? "page" : undefined}
-              className={"nav-link " + (tab === key ? "active" : "")}
+              aria-current={sectionFor(tab) === key ? "page" : undefined}
+              className={
+                "nav-link " + (sectionFor(tab) === key ? "active" : "")
+              }
               key={key}
               href={href(key)}
             >
@@ -523,59 +500,83 @@ export default async function Home({
             "topbar no-print" + (obras.length === 1 ? " single-work" : "")
           }
         >
-          <QueryForm className="inline obra-selector">
-            <input type="hidden" name="tab" value={tab} />
-            <label className="sr-only" htmlFor="obra-select">
-              Selecionar obra
-            </label>
-            <select id="obra-select" name="obra" defaultValue={obraId}>
-              {obras.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.nome}
-                </option>
-              ))}
-            </select>
-            <button className="secondary" type="submit">
-              Abrir
-            </button>
-          </QueryForm>
-          <div className="inline account-actions">
-            <span className="muted small">{user.email}</span>
-            <Theme />
-            <form action={logout}>
-              <button className="secondary">Sair</button>
-            </form>
-          </div>
+          <Link href={href("dashboard")} className="mobile-wordmark">
+            <span className="mark">S</span>SafeObra
+          </Link>
+          {obras.length > 1 ? (
+            <QueryForm className="obra-selector" autoSubmit>
+              <input type="hidden" name="tab" value={tab} />
+              <label className="sr-only" htmlFor="obra-select">
+                Selecionar obra
+              </label>
+              <select id="obra-select" name="obra" defaultValue={obraId}>
+                {obras.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.nome}
+                  </option>
+                ))}
+              </select>
+            </QueryForm>
+          ) : (
+            <span className="topbar-work">{obra.nome}</span>
+          )}
+          <ActionSheet label="Conta" title="Sua conta">
+            <p>{user.email}</p>
+            <div className="dialog-actions">
+              <Theme />
+              <form action={logout}>
+                <button className="secondary">Sair da conta</button>
+              </form>
+            </div>
+          </ActionSheet>
         </header>
         <main>
-          <div className="heading">
+          <div className="heading compact-heading">
             <div>
-              <div className="eyebrow">
-                {obra.nome} / {tabs.find((t) => t[0] === tab)?.[2]}
-              </div>
+              <p className="eyebrow">{obra.nome}</p>
               <h1>
-                {tab === "dashboard"
-                  ? "Cada detalhe, sob controle."
-                  : tabs.find((t) => t[0] === tab)?.[2]}
+                {mainSections.find((t) => t[0] === sectionFor(tab))?.[2] ??
+                  "Resumo"}
               </h1>
-              <p className="muted">
-                {tab === "dashboard"
-                  ? "Um panorama de onde sua obra está e do que vem pela frente."
-                  : "Informações compartilhadas com a equipe da obra."}
-              </p>
             </div>
-            <span className="badge">{dateBR(today())}</span>
           </div>
+          {["gastos", "pagamentos", "relatorios", "diario", "membros"].includes(
+            tab,
+          ) && (
+            <QueryForm className="section-switch no-print" autoSubmit>
+              <input type="hidden" name="obra" value={obraId} />
+              <label>
+                Visualizar
+                <select name="tab" defaultValue={tab}>
+                  {(sectionFor(tab) === "gastos"
+                    ? [
+                        ["gastos", "Compras e despesas"],
+                        ["pagamentos", "Pagamentos da equipe"],
+                        ["relatorios", "Relatórios"],
+                      ]
+                    : [
+                        ["diario", "Diário e fotos"],
+                        ["membros", "Pessoas e configurações"],
+                      ]
+                  ).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </QueryForm>
+          )}
           {tab === "dashboard" && (
             <>
               <div className="cards">
                 <Card
-                  label="Total de gastos registrados"
+                  label="Compras e despesas"
                   value={money(total)}
                   sub="Materiais, serviços e outras despesas"
                 />
                 <Card
-                  label="Total pago à equipe"
+                  label="Pago à equipe"
                   value={money(paid)}
                   sub={"Descontos aplicados: " + money(applied)}
                 />
@@ -598,7 +599,7 @@ export default async function Home({
                   }
                 />
                 <Card
-                  label="Execução geral"
+                  label="Obra concluída"
                   value={
                     progressKnown
                       ? progress.toFixed(1).replace(".", ",") + "%"
@@ -617,18 +618,32 @@ export default async function Home({
                 <section className="panel">
                   <h2>Gastos por categoria</h2>
                   {total ? (
-                    categories.map((cat) => {
-                      const value = expenses
-                        .filter((e) => e.categoria === cat)
-                        .reduce((s, e) => s + Number(e.valor_total), 0);
-                      return (
-                        <div className="chart-bar" key={cat}>
-                          <span>{cat}</span>
-                          <Progress value={(value / total) * 100} />
-                          <strong>{money(value)}</strong>
-                        </div>
-                      );
-                    })
+                    categories
+                      .filter((cat) =>
+                        expenses.some((e) => e.categoria === cat),
+                      )
+                      .sort(
+                        (a, b) =>
+                          expenses
+                            .filter((e) => e.categoria === b)
+                            .reduce((n, e) => n + Number(e.valor_total), 0) -
+                          expenses
+                            .filter((e) => e.categoria === a)
+                            .reduce((n, e) => n + Number(e.valor_total), 0),
+                      )
+                      .slice(0, 3)
+                      .map((cat) => {
+                        const value = expenses
+                          .filter((e) => e.categoria === cat)
+                          .reduce((s, e) => s + Number(e.valor_total), 0);
+                        return (
+                          <div className="chart-bar" key={cat}>
+                            <span>{cat}</span>
+                            <Progress value={(value / total) * 100} />
+                            <strong>{money(value)}</strong>
+                          </div>
+                        );
+                      })
                   ) : (
                     <p className="empty">
                       Os gastos aparecerão aqui após o primeiro lançamento.
@@ -644,7 +659,7 @@ export default async function Home({
                   </div>
                   {upcomingStages
                     .filter((s) => s.percentual_executado < 100)
-                    .slice(0, 5)
+                    .slice(0, 3)
                     .map((s) => (
                       <div className="row" key={s.id}>
                         <div>
@@ -675,7 +690,7 @@ export default async function Home({
                 {occurrences
                   .slice()
                   .sort((a, b) => b.criado_em.localeCompare(a.criado_em))
-                  .slice(0, 5)
+                  .slice(0, 3)
                   .map((o) => (
                     <div className="row" key={o.id}>
                       <div>
@@ -699,176 +714,622 @@ export default async function Home({
           )}
           {tab === "gastos" && (
             <>
-              <section className="panel no-print">
-                <h2>Encontre um lançamento</h2>
-                <QueryForm className="form-grid">
-                  <input type="hidden" name="obra" value={obraId} />
-                  <input type="hidden" name="tab" value="gastos" />
-                  <label>
-                    Descrição / fornecedor
-                    <input name="busca" defaultValue={query.busca} />
-                  </label>
-                  <label>
-                    Categoria
-                    <select
-                      name="categoria"
-                      defaultValue={query.categoria ?? ""}
-                    >
-                      <option value="">Todas</option>
-                      {categories.map((c) => (
-                        <option key={c}>{c}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Entrega
-                    <select name="status" defaultValue={query.status ?? ""}>
-                      <option value="">Todas</option>
-                      <option>pendente</option>
-                      <option>entregue</option>
-                    </select>
-                  </label>
-                  <label>
-                    De
-                    <input
-                      type="date"
-                      name="inicio"
-                      defaultValue={query.inicio}
-                    />
-                  </label>
-                  <label>
-                    Até
-                    <input type="date" name="fim" defaultValue={query.fim} />
-                  </label>
-                  <button>Aplicar filtros</button>
-                </QueryForm>
-              </section>
-              {admin && (
-                <details className="panel no-print">
-                  <summary>+ Adicionar gasto</summary>
-                  <ExpenseCreateForm obra={obraId} fields={expenseFields} />
-                  <p className="small muted">
-                    O total é calculado pela quantidade × valor unitário. Você
-                    pode escolher as notas neste formulário ou enviar depois
-                    pelo botão de cada gasto.
-                  </p>
-                </details>
-              )}
+              <div className="area-actions">
+                {admin && (
+                  <ActionSheet
+                    label="Nova despesa"
+                    title="Despesa e comprovantes"
+                    primary
+                  >
+                    <ExpenseCreateForm obra={obraId} fields={expenseFields} />
+                  </ActionSheet>
+                )}
+                <ActionSheet label="Filtros" title="Filtrar despesas">
+                  <QueryForm>
+                    <input type="hidden" name="obra" value={obraId} />
+                    <input type="hidden" name="tab" value="gastos" />
+                    <label>
+                      Descrição ou fornecedor
+                      <input name="busca" defaultValue={query.busca} />
+                    </label>
+                    <label>
+                      Categoria
+                      <select
+                        name="categoria"
+                        defaultValue={query.categoria ?? ""}
+                      >
+                        <option value="">Todas</option>
+                        {categories.map((c) => (
+                          <option key={c}>{c}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Entrega
+                      <select name="status" defaultValue={query.status ?? ""}>
+                        <option value="">Todas</option>
+                        <option>pendente</option>
+                        <option>entregue</option>
+                      </select>
+                    </label>
+                    <div className="form-grid">
+                      <label>
+                        De
+                        <input
+                          type="date"
+                          name="inicio"
+                          defaultValue={query.inicio}
+                        />
+                      </label>
+                      <label>
+                        Até
+                        <input
+                          type="date"
+                          name="fim"
+                          defaultValue={query.fim}
+                        />
+                      </label>
+                    </div>
+                    <button>Aplicar filtros</button>
+                    <Link className="button secondary" href={href("gastos")}>
+                      Limpar filtros
+                    </Link>
+                  </QueryForm>
+                </ActionSheet>
+              </div>
               <section className="panel">
-                <div className="inline justify-between">
-                  <h2>
-                    {visibleExpenses.length} lançamentos ·{" "}
+                <div className="section-title">
+                  <h2>Compras e despesas</h2>
+                  <strong>
                     {money(
                       visibleExpenses.reduce(
-                        (s, e) => s + Number(e.valor_total),
+                        (n, e) => n + Number(e.valor_total),
                         0,
                       ),
                     )}
-                  </h2>
-                  <Link
-                    className="button secondary"
-                    href={
-                      "/api/export?" +
-                      new URLSearchParams({
-                        ...Object.fromEntries(
-                          Object.entries(query).filter(
-                            (x): x is [string, string] =>
-                              typeof x[1] === "string",
-                          ),
-                        ),
-                        obra: obraId,
-                      }).toString()
-                    }
-                  >
-                    Exportar CSV / Excel
-                  </Link>
+                  </strong>
                 </div>
-                {visibleExpenses.map((e) => (
-                  <article className="row items-start" key={e.id}>
-                    <div className="grow">
-                      <div className="inline justify-between">
-                        <h3>{e.descricao}</h3>
-                        <strong>{money(e.valor_total)}</strong>
-                      </div>
-                      <p className="small muted">
-                        {e.categoria} · {e.fornecedor} · {e.quantidade} ×{" "}
-                        {money(e.valor_unitario)}
-                      </p>
-                      <p className="small">
-                        Compra: {dateBR(e.data_compra)} · Entrega:{" "}
-                        {e.data_entrega
-                          ? dateBR(e.data_entrega)
-                          : "Não informada"}{" "}
-                        ·{" "}
-                        <span
-                          className={
-                            "badge " +
-                            (e.status_entrega === "pendente" ? "warning" : "")
-                          }
-                        >
-                          {e.status_entrega}
-                        </span>
-                      </p>
-                      <Files
-                        rows={attachments}
-                        obra={obraId}
-                        entity="gastos"
-                        id={e.id}
-                        canUpload={admin}
-                      />
-                      {admin && (
-                        <details className="no-print">
-                          <summary>Editar / excluir</summary>
+                <p className="small muted">
+                  {visibleExpenses.length} lançamento(s) no período. Toque para
+                  ver detalhes e comprovantes.
+                </p>
+                <RecordList
+                  label="Despesas"
+                  empty="Nenhum gasto encontrado para estes filtros."
+                  items={visibleExpenses
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        b.data_compra.localeCompare(a.data_compra) ||
+                        b.criado_em.localeCompare(a.criado_em),
+                    )
+                    .map((e) => ({
+                      id: e.id,
+                      title: e.descricao,
+                      subtitle: `${dateBR(e.data_compra)} · ${e.fornecedor}`,
+                      amount: money(Number(e.valor_total)),
+                      status:
+                        e.status_entrega === "pendente"
+                          ? "Entrega pendente"
+                          : "Entregue",
+                      details: (
+                        <>
+                          <dl className="detail-values">
+                            <div>
+                              <dt>Total</dt>
+                              <dd>{money(Number(e.valor_total))}</dd>
+                            </div>
+                            <div>
+                              <dt>Quantidade × unitário</dt>
+                              <dd>
+                                {e.quantidade} ×{" "}
+                                {money(Number(e.valor_unitario))}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Categoria</dt>
+                              <dd>{e.categoria}</dd>
+                            </div>
+                            <div>
+                              <dt>Fornecedor</dt>
+                              <dd>{e.fornecedor}</dd>
+                            </div>
+                            <div>
+                              <dt>Entrega</dt>
+                              <dd>
+                                {e.data_entrega
+                                  ? dateBR(e.data_entrega)
+                                  : "Não informada"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Pagamento</dt>
+                              <dd>{e.forma_pagamento}</dd>
+                            </div>
+                          </dl>
+                          {e.observacoes && <p>{e.observacoes}</p>}
+                          <Files
+                            rows={attachments}
+                            obra={obraId}
+                            entity="gastos"
+                            id={e.id}
+                            canUpload={admin}
+                          />
+                        </>
+                      ),
+                      edit: admin ? (
+                        <>
                           <DataForm
                             kind="gastos"
                             obra={obraId}
                             record={e.id}
-                            fields={expenseFields.map((f) => ({
-                              ...f,
-                              value: String(
-                                (e as unknown as Record<string, unknown>)[
-                                  f.name
-                                ] ?? "",
-                              ),
-                              ...(f.scale
-                                ? {
-                                    value: String(
-                                      Number(
-                                        (
-                                          e as unknown as Record<
-                                            string,
-                                            unknown
-                                          >
-                                        )[f.name],
-                                      ) / f.scale,
-                                    ),
-                                  }
-                                : {}),
-                            }))}
+                            fields={prefill(expenseFields, e)}
                           />
                           <DeleteButton
                             obra={obraId}
                             entity="gastos"
                             id={e.id}
                           />
-                        </details>
-                      )}
-                    </div>
-                  </article>
-                ))}
-                {!visibleExpenses.length && (
-                  <p className="empty">
-                    Nenhum gasto encontrado para estes filtros.
-                  </p>
-                )}
+                        </>
+                      ) : undefined,
+                    }))}
+                />
               </section>
             </>
           )}
-          {tab === "equipe" && (
+          {["equipe", "pagamentos"].includes(tab) && (
             <>
+              {!contracts.length && (
+                <p className="empty">
+                  Cadastre uma contratação para organizar serviços e pagamentos.
+                </p>
+              )}
+              {contracts.length > 1 && (
+                <QueryForm className="contract-picker" autoSubmit>
+                  <input type="hidden" name="obra" value={obraId} />
+                  <input type="hidden" name="tab" value={tab} />
+                  <label>
+                    Contrato
+                    <select
+                      aria-label="Selecionar contrato"
+                      name="contrato"
+                      defaultValue={selectedContract?.id}
+                    >
+                      {contracts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.profissional}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </QueryForm>
+              )}
+
+              {contracts
+                .filter((c) => c.id === selectedContract?.id)
+                .map((c) => {
+                  const ownStages = stages.filter(
+                    (s) => s.contrato_id === c.id,
+                  );
+                  const cp = payments.filter((p) => p.contrato_id === c.id);
+                  const cd = discounts.filter((d) => d.contrato_id === c.id);
+                  const ownItems = contractItems.filter(
+                    (i) => i.contrato_id === c.id,
+                  );
+                  const paymentServices = c.itens_ativo
+                    ? ownItems.filter(
+                        (i) =>
+                          !i.arquivado &&
+                          (i.classe === "incluido" || i.aprovado),
+                      )
+                    : ownStages;
+                  const ex = stats.get(c.id)!;
+                  const b = balance(
+                    ex.total,
+                    ex.earned,
+                    cp.reduce((s, p) => s + Number(p.valor), 0),
+                    cp.reduce((s, p) => s + Number(p.desconto), 0),
+                  );
+                  const contractDetails = (
+                    <>
+                      {" "}
+                      {admin ? (
+                        <>
+                          {" "}
+                          <DataForm
+                            kind="contratos_mao_de_obra"
+                            obra={obraId}
+                            record={c.id}
+                            fields={[
+                              {
+                                name: "profissional",
+                                label: "Profissional",
+                                value: c.profissional,
+                              },
+                              {
+                                name: "tipo",
+                                label: "Tipo",
+                                type:
+                                  c.itens_ativo || c.plano_ativo || cp.length
+                                    ? "hidden"
+                                    : undefined,
+                                options:
+                                  c.itens_ativo || c.plano_ativo || cp.length
+                                    ? undefined
+                                    : opts(["empreitada", "diaria"]),
+                                value: c.tipo,
+                              },
+                              {
+                                ...amount("valor_geral", "Valor contratado"),
+                                type:
+                                  c.itens_ativo || c.plano_ativo || cp.length
+                                    ? "hidden"
+                                    : "number",
+                                value: String(c.valor_geral / 100),
+                              },
+                            ]}
+                          />
+                          <p className="small muted">
+                            Após ativar o plano ou registrar pagamentos, apenas
+                            o nome pode ser alterado para preservar o histórico
+                            financeiro.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="small">
+                          Contrato: {money(ex.total)} ·{" "}
+                          {c.tipo === "empreitada"
+                            ? "Empreitada"
+                            : "Diária / avulso"}
+                        </p>
+                      )}
+                      <Files
+                        rows={attachments}
+                        obra={obraId}
+                        entity="contratos_mao_de_obra"
+                        id={c.id}
+                        canUpload={admin}
+                      />
+                    </>
+                  );
+                  return (
+                    <section className="panel" key={c.id}>
+                      {(tab === "pagamentos" ||
+                        c.tipo !== "empreitada" ||
+                        !c.itens_ativo) && (
+                        <div className="inline justify-between">
+                          <h2>{c.profissional}</h2>
+                          {
+                            <ActionSheet
+                              label="Contrato"
+                              title="Dados do contrato"
+                            >
+                              {contractDetails}
+                            </ActionSheet>
+                          }
+                          <span className="badge">
+                            {c.tipo === "empreitada"
+                              ? "Empreitada"
+                              : "Diária / avulso"}{" "}
+                            · {money(ex.total)}
+                          </span>
+                        </div>
+                      )}
+                      {(tab === "pagamentos" ||
+                        c.tipo !== "empreitada" ||
+                        !c.itens_ativo) && (
+                        <>
+                          <div
+                            className={
+                              tab === "pagamentos"
+                                ? "cards financial-cards"
+                                : "cards"
+                            }
+                          >
+                            {tab !== "pagamentos" && (
+                              <Card
+                                label="Executado / devido"
+                                value={money(ex.earned)}
+                                sub={
+                                  ex.progressKnown
+                                    ? ex.progress.toFixed(1) + "% do plano"
+                                    : "Distribua o preço entre os serviços"
+                                }
+                              />
+                            )}
+                            <Card
+                              label="Pago (líquido)"
+                              value={money(
+                                cp.reduce((s, p) => s + Number(p.valor), 0),
+                              )}
+                              sub={
+                                tab === "pagamentos"
+                                  ? "Devido agora: " + money(b.due)
+                                  : "Adiantamento: " + money(b.advance)
+                              }
+                            />
+                            {tab !== "pagamentos" && (
+                              <Card
+                                label="Devido até agora"
+                                value={money(b.due)}
+                                sub="Executado menos pagamentos e descontos"
+                              />
+                            )}
+                            <Card
+                              label="Saldo do contrato"
+                              value={money(b.remaining)}
+                              sub={
+                                "Descontos pendentes: " +
+                                money(
+                                  cd.reduce(
+                                    (s, d) =>
+                                      s + Number(d.valor) - Number(d.aplicado),
+                                    0,
+                                  ),
+                                )
+                              }
+                            />
+                          </div>
+                          {ex.progressKnown && <Progress value={ex.progress} />}
+                        </>
+                      )}
+                      {tab === "equipe" &&
+                        c.itens_ativo &&
+                        contracts.length === 1 && (
+                          <p className="contract-caption">{c.profissional}</p>
+                        )}
+                      {tab === "equipe" && c.tipo === "empreitada" && (
+                        <ContractWorkboard
+                          contractDetails={contractDetails}
+                          obra={obraId}
+                          contract={c}
+                          items={ownItems}
+                          payments={cp}
+                          allocations={paymentAllocations.filter(
+                            (a) => a.contrato_id === c.id,
+                          )}
+                          executions={itemExecutions.filter((e) =>
+                            ownItems.some((i) => i.id === e.item_id),
+                          )}
+                          admin={admin}
+                          aiEnabled={Boolean(
+                            process.env.SAFEOBRA_OPENAI_API_KEY,
+                          )}
+                        />
+                      )}
+                      {tab === "equipe" &&
+                        c.itens_ativo &&
+                        ownStages.length > 0 && (
+                          <ActionSheet
+                            label="Plano anterior"
+                            title="Plano anterior preservado"
+                          >
+                            {ownStages.map((stage) => (
+                              <p className="small" key={stage.id}>
+                                {stage.nome} · peso original {stage.peso / 100}%
+                                · execução antes da adoção{" "}
+                                {stage.percentual_executado}%
+                              </p>
+                            ))}
+                          </ActionSheet>
+                        )}
+                      {tab === "equipe" &&
+                        c.tipo === "empreitada" &&
+                        !c.itens_ativo && (
+                          <>
+                            <h3>
+                              Plano de serviços · pesos{" "}
+                              {ownStages.reduce((s, x) => s + x.peso, 0) / 100}%
+                            </h3>
+                            {!c.plano_ativo && (
+                              <p className="notice">
+                                Distribua 100% do valor contratado entre os
+                                serviços e ative o plano. Pesos e medições ficam
+                                fixos após a ativação.
+                              </p>
+                            )}
+                            {ownStages.map((s) => (
+                              <article key={s.id} className="row items-start">
+                                <div className="grow">
+                                  <div className="inline justify-between">
+                                    <strong>{s.nome}</strong>
+                                    <span>{s.percentual_executado}%</span>
+                                  </div>
+                                  <p className="small muted">
+                                    {s.categoria} · peso {s.peso / 100}% ·
+                                    executado{" "}
+                                    {money(
+                                      Math.round(
+                                        (c.valor_geral *
+                                          s.peso *
+                                          s.percentual_executado) /
+                                          1000000,
+                                      ),
+                                    )}{" "}
+                                    · falta{" "}
+                                    {money(
+                                      Math.round(
+                                        (c.valor_geral *
+                                          s.peso *
+                                          (100 - s.percentual_executado)) /
+                                          1000000,
+                                      ),
+                                    )}
+                                  </p>
+                                  <Progress value={s.percentual_executado} />
+                                  {admin && c.plano_ativo && (
+                                    <details>
+                                      <summary>
+                                        Registrar avanço acumulado
+                                      </summary>
+                                      <DataForm
+                                        kind="execution"
+                                        obra={obraId}
+                                        fields={[
+                                          {
+                                            name: "servico_id",
+                                            label: "Serviço",
+                                            options: [
+                                              { value: s.id, label: s.nome },
+                                            ],
+                                          },
+                                          date("data", "Data"),
+                                          {
+                                            name: "percentual",
+                                            label: "Execução acumulada (%)",
+                                            type: "number",
+                                            value: String(
+                                              s.percentual_executado,
+                                            ),
+                                          },
+                                          {
+                                            name: "observacoes",
+                                            label: "Observações",
+                                            type: "textarea",
+                                            optional: true,
+                                          },
+                                        ]}
+                                      />
+                                    </details>
+                                  )}
+                                  {admin && !c.plano_ativo && (
+                                    <DeleteButton
+                                      obra={obraId}
+                                      entity="servicos"
+                                      id={s.id}
+                                    />
+                                  )}
+                                  {admin && (
+                                    <details>
+                                      <summary>Editar etapa</summary>
+                                      <DataForm
+                                        kind="servicos"
+                                        obra={obraId}
+                                        record={s.id}
+                                        fields={[
+                                          {
+                                            name: "contrato_id",
+                                            label: "Contrato",
+                                            options: [
+                                              {
+                                                value: c.id,
+                                                label: c.profissional,
+                                              },
+                                            ],
+                                          },
+                                          {
+                                            name: "nome",
+                                            label: "Nome",
+                                            value: s.nome,
+                                          },
+                                          { ...category, value: s.categoria },
+                                          ...measurementFields(s),
+                                          {
+                                            name: "peso",
+                                            label: "Peso (%)",
+                                            type: "number",
+                                            scale: 100,
+                                            value: String(s.peso / 100),
+                                          },
+                                          {
+                                            name: "descricao",
+                                            label: "Descrição",
+                                            type: "textarea",
+                                            optional: true,
+                                            value: s.descricao,
+                                          },
+                                        ]}
+                                      />
+                                    </details>
+                                  )}
+                                  <details>
+                                    <summary>Histórico de execução</summary>
+                                    {executions
+                                      .filter((e) => e.servico_id === s.id)
+                                      .sort((a, b) =>
+                                        a.data.localeCompare(b.data),
+                                      )
+                                      .map((e) => (
+                                        <p key={e.id} className="small">
+                                          {dateBR(e.data)} · {e.percentual}%
+                                          acumulado · {e.observacoes}
+                                        </p>
+                                      ))}
+                                  </details>
+                                </div>
+                              </article>
+                            ))}
+                            {admin && !c.plano_ativo && (
+                              <>
+                                <details>
+                                  <summary>+ Adicionar serviço</summary>
+                                  <DataForm
+                                    kind="servicos"
+                                    obra={obraId}
+                                    fields={[
+                                      {
+                                        name: "contrato_id",
+                                        label: "Contrato",
+                                        options: [
+                                          {
+                                            value: c.id,
+                                            label: c.profissional,
+                                          },
+                                        ],
+                                      },
+                                      {
+                                        name: "nome",
+                                        label: "Nome do serviço",
+                                      },
+                                      category,
+                                      ...measurementFields(),
+                                      {
+                                        name: "peso",
+                                        label: "Peso na empreitada (%)",
+                                        type: "number",
+                                        scale: 100,
+                                      },
+                                      {
+                                        name: "descricao",
+                                        label: "Descrição",
+                                        type: "textarea",
+                                        optional: true,
+                                      },
+                                    ]}
+                                  />
+                                </details>
+                                <ActionButton
+                                  label="Ativar plano de 100%"
+                                  action={async () => {
+                                    "use server";
+                                    return activate(obraId, c.id);
+                                  }}
+                                />
+                              </>
+                            )}
+                          </>
+                        )}
+                      {tab === "pagamentos" && (
+                        <ContractPayments
+                          obra={obraId}
+                          contract={c}
+                          payments={allPayments.filter(
+                            (p) => p.contrato_id === c.id,
+                          )}
+                          discounts={cd}
+                          services={paymentServices}
+                          attachments={attachments}
+                          admin={admin}
+                        />
+                      )}
+                    </section>
+                  );
+                })}
               {admin && (
-                <details className="panel">
-                  <summary>+ Cadastrar profissional e contratação</summary>
+                <ActionSheet
+                  label="Novo contrato"
+                  title="Cadastrar profissional e contratação"
+                >
                   <DataForm
                     kind="contratos_mao_de_obra"
                     obra={obraId}
@@ -885,660 +1346,106 @@ export default async function Home({
                       amount("valor_geral", "Valor contratado"),
                     ]}
                   />
-                </details>
+                </ActionSheet>
               )}
-              {!contracts.length && (
-                <p className="empty">
-                  Cadastre uma contratação para organizar serviços e pagamentos.
-                </p>
-              )}
-              {contracts.map((c) => {
-                const ownStages = stages.filter((s) => s.contrato_id === c.id);
-                const cp = payments.filter((p) => p.contrato_id === c.id);
-                const cd = discounts.filter((d) => d.contrato_id === c.id);
-                const ownItems = contractItems.filter(
-                  (i) => i.contrato_id === c.id,
-                );
-                const paymentServices = c.itens_ativo
-                  ? ownItems.filter(
-                      (i) =>
-                        !i.arquivado && (i.classe === "incluido" || i.aprovado),
-                    )
-                  : ownStages;
-                const ex = stats.get(c.id)!;
-                const b = balance(
-                  ex.total,
-                  ex.earned,
-                  cp.reduce((s, p) => s + Number(p.valor), 0),
-                  cp.reduce((s, p) => s + Number(p.desconto), 0),
-                );
-                return (
-                  <section className="panel" key={c.id}>
-                    <div className="inline justify-between">
-                      <h2>{c.profissional}</h2>
-                      {admin && (
-                        <details>
-                          <summary>Editar contratação</summary>
-                          <DataForm
-                            kind="contratos_mao_de_obra"
-                            obra={obraId}
-                            record={c.id}
-                            fields={[
-                              {
-                                name: "profissional",
-                                label: "Profissional",
-                                value: c.profissional,
-                              },
-                              {
-                                name: "tipo",
-                                label: "Tipo",
-                                options: opts(["empreitada", "diaria"]),
-                                value: c.tipo,
-                              },
-                              {
-                                ...amount("valor_geral", "Valor contratado"),
-                                value: String(c.valor_geral / 100),
-                              },
-                            ]}
-                          />
-                          <p className="small muted">
-                            Após ativar o plano ou registrar pagamentos, apenas
-                            o nome pode ser alterado para preservar o histórico
-                            financeiro.
-                          </p>
-                        </details>
-                      )}
-                      <span className="badge">
-                        {c.tipo === "empreitada"
-                          ? "Empreitada"
-                          : "Diária / avulso"}{" "}
-                        · {money(ex.total)}
-                      </span>
-                    </div>
-                    <div className="cards">
-                      <Card
-                        label="Executado / devido"
-                        value={money(ex.earned)}
-                        sub={
-                          ex.progressKnown
-                            ? ex.progress.toFixed(1) + "% do plano"
-                            : "Distribua o preço entre os serviços"
-                        }
-                      />
-                      <Card
-                        label="Pago (líquido)"
-                        value={money(
-                          cp.reduce((s, p) => s + Number(p.valor), 0),
-                        )}
-                        sub={"Adiantamento: " + money(b.advance)}
-                      />
-                      <Card
-                        label="Devido até agora"
-                        value={money(b.due)}
-                        sub="Executado menos pagamentos e descontos"
-                      />
-                      <Card
-                        label="Saldo do contrato"
-                        value={money(b.remaining)}
-                        sub={
-                          "Descontos pendentes: " +
-                          money(
-                            cd.reduce(
-                              (s, d) =>
-                                s + Number(d.valor) - Number(d.aplicado),
-                              0,
-                            ),
-                          )
-                        }
-                      />
-                    </div>
-                    {ex.progressKnown && <Progress value={ex.progress} />}
-                    <Files
-                      rows={attachments}
-                      obra={obraId}
-                      entity="contratos_mao_de_obra"
-                      id={c.id}
-                      canUpload={admin}
-                    />
-                    {c.tipo === "empreitada" && (
-                      <ContractWorkboard
-                        obra={obraId}
-                        contract={c}
-                        items={ownItems}
-                        payments={cp}
-                        allocations={paymentAllocations.filter(
-                          (a) => a.contrato_id === c.id,
-                        )}
-                        executions={itemExecutions.filter((e) =>
-                          ownItems.some((i) => i.id === e.item_id),
-                        )}
-                        admin={admin}
-                        aiEnabled={Boolean(process.env.SAFEOBRA_OPENAI_API_KEY)}
-                      />
-                    )}
-                    {c.itens_ativo && ownStages.length > 0 && (
-                      <details>
-                        <summary>Plano anterior preservado (histórico)</summary>
-                        {ownStages.map((stage) => (
-                          <p className="small" key={stage.id}>
-                            {stage.nome} · peso original {stage.peso / 100}% ·
-                            execução antes da adoção{" "}
-                            {stage.percentual_executado}%
-                          </p>
-                        ))}
-                      </details>
-                    )}
-                    {c.tipo === "empreitada" && !c.itens_ativo && (
-                      <>
-                        <h3>
-                          Plano de serviços · pesos{" "}
-                          {ownStages.reduce((s, x) => s + x.peso, 0) / 100}%
-                        </h3>
-                        {!c.plano_ativo && (
-                          <p className="notice">
-                            Distribua 100% do valor contratado entre os serviços
-                            e ative o plano. Pesos e medições ficam fixos após a
-                            ativação.
-                          </p>
-                        )}
-                        {ownStages.map((s) => (
-                          <article key={s.id} className="row items-start">
-                            <div className="grow">
-                              <div className="inline justify-between">
-                                <strong>{s.nome}</strong>
-                                <span>{s.percentual_executado}%</span>
-                              </div>
-                              <p className="small muted">
-                                {s.categoria} · peso {s.peso / 100}% · executado{" "}
-                                {money(
-                                  Math.round(
-                                    (c.valor_geral *
-                                      s.peso *
-                                      s.percentual_executado) /
-                                      1000000,
-                                  ),
-                                )}{" "}
-                                · falta{" "}
-                                {money(
-                                  Math.round(
-                                    (c.valor_geral *
-                                      s.peso *
-                                      (100 - s.percentual_executado)) /
-                                      1000000,
-                                  ),
-                                )}
-                              </p>
-                              <Progress value={s.percentual_executado} />
-                              {admin && c.plano_ativo && (
-                                <details>
-                                  <summary>Registrar avanço acumulado</summary>
-                                  <DataForm
-                                    kind="execution"
-                                    obra={obraId}
-                                    fields={[
-                                      {
-                                        name: "servico_id",
-                                        label: "Serviço",
-                                        options: [
-                                          { value: s.id, label: s.nome },
-                                        ],
-                                      },
-                                      date("data", "Data"),
-                                      {
-                                        name: "percentual",
-                                        label: "Execução acumulada (%)",
-                                        type: "number",
-                                        value: String(s.percentual_executado),
-                                      },
-                                      {
-                                        name: "observacoes",
-                                        label: "Observações",
-                                        type: "textarea",
-                                        optional: true,
-                                      },
-                                    ]}
-                                  />
-                                </details>
-                              )}
-                              {admin && !c.plano_ativo && (
-                                <DeleteButton
-                                  obra={obraId}
-                                  entity="servicos"
-                                  id={s.id}
-                                />
-                              )}
-                              {admin && (
-                                <details>
-                                  <summary>Editar etapa</summary>
-                                  <DataForm
-                                    kind="servicos"
-                                    obra={obraId}
-                                    record={s.id}
-                                    fields={[
-                                      {
-                                        name: "contrato_id",
-                                        label: "Contrato",
-                                        options: [
-                                          {
-                                            value: c.id,
-                                            label: c.profissional,
-                                          },
-                                        ],
-                                      },
-                                      {
-                                        name: "nome",
-                                        label: "Nome",
-                                        value: s.nome,
-                                      },
-                                      { ...category, value: s.categoria },
-                                      ...measurementFields(s),
-                                      {
-                                        name: "peso",
-                                        label: "Peso (%)",
-                                        type: "number",
-                                        scale: 100,
-                                        value: String(s.peso / 100),
-                                      },
-                                      {
-                                        name: "descricao",
-                                        label: "Descrição",
-                                        type: "textarea",
-                                        optional: true,
-                                        value: s.descricao,
-                                      },
-                                    ]}
-                                  />
-                                </details>
-                              )}
-                              <details>
-                                <summary>Histórico de execução</summary>
-                                {executions
-                                  .filter((e) => e.servico_id === s.id)
-                                  .sort((a, b) => a.data.localeCompare(b.data))
-                                  .map((e) => (
-                                    <p key={e.id} className="small">
-                                      {dateBR(e.data)} · {e.percentual}%
-                                      acumulado · {e.observacoes}
-                                    </p>
-                                  ))}
-                              </details>
-                            </div>
-                          </article>
-                        ))}
-                        {admin && !c.plano_ativo && (
-                          <>
-                            <details>
-                              <summary>+ Adicionar serviço</summary>
-                              <DataForm
-                                kind="servicos"
-                                obra={obraId}
-                                fields={[
-                                  {
-                                    name: "contrato_id",
-                                    label: "Contrato",
-                                    options: [
-                                      { value: c.id, label: c.profissional },
-                                    ],
-                                  },
-                                  { name: "nome", label: "Nome do serviço" },
-                                  category,
-                                  ...measurementFields(),
-                                  {
-                                    name: "peso",
-                                    label: "Peso na empreitada (%)",
-                                    type: "number",
-                                    scale: 100,
-                                  },
-                                  {
-                                    name: "descricao",
-                                    label: "Descrição",
-                                    type: "textarea",
-                                    optional: true,
-                                  },
-                                ]}
-                              />
-                            </details>
-                            <ActionButton
-                              label="Ativar plano de 100%"
-                              action={async () => {
-                                "use server";
-                                return activate(obraId, c.id);
-                              }}
-                            />
-                          </>
-                        )}
-                      </>
-                    )}
-                    <h3 className="mt-6">Pagamentos e fechamento</h3>
-                    {cp.map((p) => (
-                      <article key={p.id} className="row">
-                        <div>
-                          <strong>{p.referencia}</strong>
-                          <p className="small muted">
-                            {dateBR(p.data)} · {p.forma_pagamento} · bruto{" "}
-                            {money(p.valor_bruto)} − descontos{" "}
-                            {money(p.desconto)} = líquido {money(p.valor)}
-                          </p>
-                          <Files
-                            rows={attachments}
-                            obra={obraId}
-                            entity="pagamentos"
-                            id={p.id}
-                            canUpload={admin}
-                          />
-                          {admin && (
-                            <>
-                              <ActionButton
-                                label="Estornar pagamento"
-                                confirm
-                                action={async () => {
-                                  "use server";
-                                  return cancelPayment(obraId, p.id);
-                                }}
-                              />
-                              <details>
-                                <summary>Corrigir pagamento</summary>
-                                <DataForm
-                                  kind="payment"
-                                  obra={obraId}
-                                  record={p.id}
-                                  fields={[
-                                    {
-                                      name: "contrato_id",
-                                      label: "Contrato",
-                                      options: [
-                                        { value: c.id, label: c.profissional },
-                                      ],
-                                    },
-                                    {
-                                      name: "modo",
-                                      label: "Modo",
-                                      options: opts(["semanal", "servico"]),
-                                      value: p.modo,
-                                    },
-                                    {
-                                      name: "servico_id",
-                                      label: "Serviço",
-                                      optional: true,
-                                      options: paymentServices.map((s) => ({
-                                        value: s.id,
-                                        label: s.nome,
-                                      })),
-                                      value: p.item_id ?? p.servico_id ?? "",
-                                    },
-                                    { ...date("data", "Data"), value: p.data },
-                                    {
-                                      ...amount("valor_bruto", "Valor bruto"),
-                                      value: String(p.valor_bruto / 100),
-                                    },
-                                    {
-                                      name: "referencia",
-                                      label: "Referência",
-                                      value: p.referencia,
-                                    },
-                                    {
-                                      name: "forma_pagamento",
-                                      label: "Forma de pagamento",
-                                      value: p.forma_pagamento,
-                                    },
-                                    {
-                                      name: "final",
-                                      label: "Aplicar descontos finais",
-                                      type: "checkbox",
-                                      optional: true,
-                                    },
-                                  ]}
-                                />
-                              </details>
-                            </>
-                          )}
-                        </div>
-                      </article>
-                    ))}
-                    {!cp.length && (
-                      <p className="muted small">
-                        Nenhum pagamento registrado.
-                      </p>
-                    )}
-                    {admin && (
-                      <details>
-                        <summary>+ Registrar pagamento / adiantamento</summary>
-                        <DataForm
-                          kind="payment"
-                          obra={obraId}
-                          fields={[
-                            {
-                              name: "contrato_id",
-                              label: "Contrato",
-                              options: [{ value: c.id, label: c.profissional }],
-                            },
-                            {
-                              name: "modo",
-                              label: "Fechamento",
-                              options: [
-                                { value: "semanal", label: "Semanal" },
-                                {
-                                  value: "servico",
-                                  label: "Por serviço (permite adiantamento)",
-                                },
-                              ],
-                            },
-                            {
-                              name: "servico_id",
-                              label: "Serviço",
-                              options: paymentServices.map((s) => ({
-                                value: s.id,
-                                label: s.nome,
-                              })),
-                              optional: true,
-                            },
-                            date("data", "Data"),
-                            amount("valor_bruto", "Valor bruto a quitar"),
-                            {
-                              name: "referencia",
-                              label: "Referência / semana",
-                            },
-                            {
-                              name: "forma_pagamento",
-                              label: "Forma de pagamento",
-                              options: opts([
-                                "Pix",
-                                "Dinheiro",
-                                "Transferência",
-                              ]),
-                            },
-                            {
-                              name: "final",
-                              label:
-                                "Fechamento final: aplicar também descontos finais",
-                              type: "checkbox",
-                              optional: true,
-                            },
-                          ]}
-                        />
-                        <p className="small muted">
-                          Descontos pendentes são aplicados ao bruto. Excedentes
-                          seguem para o próximo fechamento. Correções estornam o
-                          pagamento anterior e registram um novo, mantendo a
-                          trilha de auditoria.
-                        </p>
-                      </details>
-                    )}
-                    <details>
-                      <summary>Histórico de estornos</summary>
-                      {allPayments
-                        .filter((p) => p.contrato_id === c.id && p.anulado)
-                        .map((p) => (
-                          <div key={p.id}>
-                            <p>
-                              {dateBR(p.data)} · {p.referencia} · bruto{" "}
-                              {money(p.valor_bruto)} · ESTORNADO
-                            </p>
-                            <Files
-                              rows={attachments}
-                              obra={obraId}
-                              entity="pagamentos"
-                              id={p.id}
-                              canUpload={false}
-                            />
-                          </div>
-                        ))}
-                    </details>
-                    <h3 className="mt-6">
-                      Materiais e ferramentas do profissional
-                    </h3>
-                    {cd.map((d) => (
-                      <div className="row" key={d.id}>
-                        <div>
-                          <strong>{d.descricao}</strong>
-                          <p className="small muted">
-                            {d.aplicacao === "final"
-                              ? "Desconto final"
-                              : "Desconto semanal"}{" "}
-                            · {money(d.valor)} · aplicado {money(d.aplicado)} ·
-                            pendente {money(d.valor - d.aplicado)}
-                          </p>
-                          <Files
-                            rows={attachments}
-                            obra={obraId}
-                            entity="descontos_profissional"
-                            id={d.id}
-                            canUpload={admin}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                    {admin && (
-                      <details>
-                        <summary>+ Adicionar desconto</summary>
-                        <DataForm
-                          kind="descontos_profissional"
-                          obra={obraId}
-                          fields={[
-                            {
-                              name: "contrato_id",
-                              label: "Contrato",
-                              options: [{ value: c.id, label: c.profissional }],
-                            },
-                            {
-                              name: "descricao",
-                              label:
-                                "Material / ferramenta que ficará com o profissional",
-                            },
-                            amount("valor", "Valor"),
-                            {
-                              name: "aplicacao",
-                              label: "Aplicar",
-                              options: [
-                                {
-                                  value: "semanal",
-                                  label: "No próximo fechamento",
-                                },
-                                {
-                                  value: "final",
-                                  label: "No fechamento final",
-                                },
-                              ],
-                            },
-                          ]}
-                        />
-                      </details>
-                    )}
-                  </section>
-                );
-              })}
             </>
           )}
           {tab === "diario" && (
             <>
-              <details className="panel">
-                <summary>+ Compartilhar registro ou foto</summary>
-                <DataForm
-                  kind="ocorrencias"
-                  obra={obraId}
-                  fields={occurrenceFields}
-                />
-                <p className="small muted">
-                  Após salvar, abra os anexos do registro para enviar fotos da
-                  câmera ou galeria.
-                </p>
-              </details>
+              <div className="area-actions">
+                <ActionSheet
+                  label="Novo registro"
+                  title="Registro e fotos da obra"
+                  primary
+                >
+                  <ExpenseCreateForm
+                    obra={obraId}
+                    fields={occurrenceFields}
+                    entity="ocorrencias"
+                  />
+                </ActionSheet>
+                <ActionSheet label="Filtros" title="Filtrar diário">
+                  <QueryForm>
+                    <input type="hidden" name="obra" value={obraId} />
+                    <input type="hidden" name="tab" value="diario" />
+                    <label>
+                      Data
+                      <input type="date" name="dia" defaultValue={query.dia} />
+                    </label>
+                    <label>
+                      Serviço
+                      <select name="servico" defaultValue={query.servico ?? ""}>
+                        <option value="">Todos</option>
+                        {stageOpts.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button>Aplicar filtros</button>
+                    <Link className="button secondary" href={href("diario")}>
+                      Limpar filtros
+                    </Link>
+                  </QueryForm>
+                </ActionSheet>
+              </div>
               <section className="panel">
-                <h2>Galeria e linha do tempo</h2>
-                <QueryForm className="form-grid no-print">
-                  <input type="hidden" name="obra" value={obraId} />
-                  <input type="hidden" name="tab" value="diario" />
-                  <label>
-                    Data
-                    <input type="date" name="dia" defaultValue={query.dia} />
-                  </label>
-                  <label>
-                    Serviço
-                    <select name="servico" defaultValue={query.servico ?? ""}>
-                      <option value="">Todos os serviços</option>
-                      {stageOpts.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button>Filtrar diário</button>
-                </QueryForm>
-                <div className="timeline">
-                  {occurrences
+                <h2>Diário e fotos</h2>
+                <RecordList
+                  label="Registros do diário"
+                  empty="Registre o andamento ou compartilhe fotos da obra."
+                  items={occurrences
                     .filter(
                       (o) =>
                         (!query.dia || o.data === query.dia) &&
                         (!query.servico || o.servico_id === query.servico),
                     )
-                    .sort((a, b) => b.data.localeCompare(a.data))
-                    .map((o) => (
-                      <article key={o.id}>
-                        <p className="eyebrow">
-                          {dateBR(o.data)} · {o.tipo}
-                        </p>
-                        <h3>{o.titulo}</h3>
-                        <span
-                          className={
-                            "badge " +
-                            (o.status !== "resolvido" ? "warning" : "")
-                          }
-                        >
-                          {o.status.replace("_", " ")}
-                        </span>
-                        <p>{o.descricao}</p>
-                        <p className="small muted">
-                          Responsável: {o.responsavel || "Não atribuído"} ·
-                          Autor: {o.criado_por.slice(0, 8)}
-                        </p>
-                        <div className="form-grid">
-                          {attachments
-                            .filter(
-                              (a) =>
-                                a.entidade === "ocorrencias" &&
-                                a.entidade_id === o.id &&
-                                a.mime.startsWith("image/"),
-                            )
-                            .map((a) => (
-                              <Photo key={a.id} obra={obraId} id={a.id} />
-                            ))}
-                        </div>
-                        <Files
-                          rows={attachments}
-                          obra={obraId}
-                          entity="ocorrencias"
-                          id={o.id}
-                          canUpload
-                        />
-                        {admin && (
-                          <details>
-                            <summary>Editar ocorrência</summary>
-                            <DataForm
-                              kind="ocorrencias-edit"
-                              obra={obraId}
-                              record={o.id}
-                              fields={[
+                    .sort(
+                      (a, b) =>
+                        b.data.localeCompare(a.data) ||
+                        b.criado_em.localeCompare(a.criado_em),
+                    )
+                    .map((o) => ({
+                      id: o.id,
+                      title: o.titulo,
+                      subtitle: `${dateBR(o.data)} · ${o.tipo}`,
+                      status: o.status.replaceAll("_", " "),
+                      details: (
+                        <>
+                          <p>{o.descricao}</p>
+                          <p className="small muted">
+                            Responsável: {o.responsavel || "Não atribuído"}
+                          </p>
+                          <div className="photo-grid">
+                            {attachments
+                              .filter(
+                                (a) =>
+                                  a.entidade === "ocorrencias" &&
+                                  a.entidade_id === o.id &&
+                                  a.mime.startsWith("image/"),
+                              )
+                              .map((a) => (
+                                <Photo key={a.id} obra={obraId} id={a.id} />
+                              ))}
+                          </div>
+                          <Files
+                            rows={attachments}
+                            obra={obraId}
+                            entity="ocorrencias"
+                            id={o.id}
+                            canUpload
+                          />
+                        </>
+                      ),
+                      edit: admin ? (
+                        <>
+                          <DataForm
+                            kind="ocorrencias-edit"
+                            obra={obraId}
+                            record={o.id}
+                            fields={prefill(
+                              [
                                 ...occurrenceFields,
                                 {
                                   name: "status",
@@ -1549,31 +1456,19 @@ export default async function Home({
                                     "resolvido",
                                   ]),
                                 },
-                              ].map((f) => ({
-                                ...f,
-                                value: String(
-                                  (o as unknown as Record<string, unknown>)[
-                                    f.name
-                                  ] ?? "",
-                                ),
-                              }))}
-                            />
-                            <DeleteButton
-                              obra={obraId}
-                              entity="ocorrencias"
-                              id={o.id}
-                            />
-                          </details>
-                        )}
-                      </article>
-                    ))}
-                </div>
-                {!occurrences.length && (
-                  <p className="empty">
-                    Registre o andamento, um ponto de atenção ou uma mudança
-                    solicitada.
-                  </p>
-                )}
+                              ],
+                              o,
+                            )}
+                          />
+                          <DeleteButton
+                            obra={obraId}
+                            entity="ocorrencias"
+                            id={o.id}
+                          />
+                        </>
+                      ) : undefined,
+                    }))}
+                />
               </section>
             </>
           )}
@@ -1691,8 +1586,7 @@ export default async function Home({
               <section className="panel">
                 <h2>Obras e acesso</h2>
                 {admin && (
-                  <details>
-                    <summary>Editar nome / orçamento</summary>
+                  <ActionSheet label="Editar obra">
                     <DataForm
                       kind="obra"
                       record={obraId}
@@ -1708,14 +1602,13 @@ export default async function Home({
                         },
                       ]}
                     />
-                  </details>
+                  </ActionSheet>
                 )}
                 <p className="muted">
                   ADM gerencia finanças e equipe. USER consulta os dados e
                   contribui no diário.
                 </p>
-                <details>
-                  <summary>+ Criar outra obra</summary>
+                <ActionSheet label="Criar outra obra">
                   <DataForm
                     kind="obra"
                     fields={[
@@ -1723,12 +1616,15 @@ export default async function Home({
                       amount("orcamento", "Orçamento"),
                     ]}
                   />
-                </details>
+                </ActionSheet>
               </section>
-              <Members obra={obraId} admin={admin} />
+              <Members obra={obraId} admin={admin} viewer={user.id} />
               {admin && (
-                <section className="panel">
-                  <h2>Convidar para a obra</h2>
+                <ActionSheet
+                  label="Convidar pessoa"
+                  title="Convidar para a obra"
+                  primary
+                >
                   <DataForm
                     kind="invite"
                     obra={obraId}
@@ -1751,7 +1647,7 @@ export default async function Home({
                     O link só aparece uma vez, expira em 7 dias e aceita um
                     único usuário.
                   </p>
-                </section>
+                </ActionSheet>
               )}
             </>
           )}
@@ -1760,7 +1656,15 @@ export default async function Home({
     </div>
   );
 }
-async function Members({ obra, admin }: { obra: string; admin: boolean }) {
+async function Members({
+  obra,
+  admin,
+  viewer,
+}: {
+  obra: string;
+  admin: boolean;
+  viewer: string;
+}) {
   const client = await db();
   const [{ data: members, error }, { data: invites, error: inviteError }] =
     await Promise.all([
@@ -1776,60 +1680,85 @@ async function Members({ obra, admin }: { obra: string; admin: boolean }) {
   return (
     <>
       <section className="panel">
-        <h2>Membros da obra</h2>
-        {members?.map((m) => (
-          <div className="row" key={m.user_id}>
-            <div>
-              <strong>{m.user_id}</strong>
-              <p className="muted small">
-                {m.role === "admin" ? "ADM" : "USER"}
-              </p>
-            </div>
-            {admin && (
-              <ActionButton
-                confirm
-                label="Remover"
-                action={async () => {
-                  "use server";
-                  return memberAction(obra, m.user_id, "remove");
-                }}
-              />
-            )}
-          </div>
-        ))}
+        <h2>Pessoas da obra</h2>
+        <RecordList
+          label="Pessoas"
+          items={(members ?? []).map((m) => ({
+            id: m.user_id,
+            title:
+              m.user_id === viewer
+                ? "Você"
+                : `Participante · ${m.user_id.slice(0, 8)}`,
+            subtitle:
+              m.role === "admin" ? "Administrador" : "Visualização e diário",
+            details: (
+              <>
+                <p>
+                  {m.role === "admin"
+                    ? "Pode gerenciar serviços, finanças e acessos."
+                    : "Pode consultar os dados e contribuir no diário."}
+                </p>
+                {admin && (
+                  <ActionButton
+                    confirm
+                    label="Remover da obra"
+                    action={async () => {
+                      "use server";
+                      return memberAction(obra, m.user_id, "remove");
+                    }}
+                  />
+                )}
+              </>
+            ),
+          }))}
+        />
       </section>
       {admin && (
         <section className="panel">
           <h2>Convites</h2>
-          {(invites as M.Invite[])?.map((i) => (
-            <div className="row" key={i.id}>
-              <span>
-                {i.role.toUpperCase()} · até {dateBR(i.expira_em)} ·{" "}
-                {i.revogado
-                  ? "Revogado"
-                  : i.usado_em
-                    ? "Utilizado"
-                    : new Date(i.expira_em) < new Date()
-                      ? "Expirado"
-                      : "Pendente"}
-              </span>
-              {!i.revogado && !i.usado_em && (
-                <ActionButton
-                  confirm
-                  label="Revogar"
-                  action={async () => {
-                    "use server";
-                    return memberAction(obra, i.id, "revoke");
-                  }}
-                />
-              )}
-            </div>
-          ))}
+          <RecordList
+            label="Convites"
+            empty="Nenhum convite gerado."
+            items={((invites as M.Invite[]) ?? []).map((i) => ({
+              id: i.id,
+              title:
+                i.role === "admin"
+                  ? "Convite para administrador"
+                  : "Convite para participante",
+              subtitle: `Válido até ${dateBR(i.expira_em)}`,
+              status: i.revogado
+                ? "Revogado"
+                : i.usado_em
+                  ? "Utilizado"
+                  : new Date(i.expira_em) < new Date()
+                    ? "Expirado"
+                    : "Pendente",
+              details: (
+                <>
+                  <p>
+                    O link é válido para uma pessoa e expira em{" "}
+                    {dateBR(i.expira_em)}.
+                  </p>
+                  {!i.revogado && !i.usado_em && (
+                    <ActionButton
+                      confirm
+                      label="Revogar convite"
+                      action={async () => {
+                        "use server";
+                        return memberAction(obra, i.id, "revoke");
+                      }}
+                    />
+                  )}
+                </>
+              ),
+            }))}
+          />
         </section>
       )}
     </>
   );
 }
+
 async function AuditTrail({ obra }: { obra: string }) {
   const c = await db();
   const { data, error } = await c
@@ -1840,8 +1769,7 @@ async function AuditTrail({ obra }: { obra: string }) {
     .limit(50);
   if (error) throw new Error("Falha ao carregar auditoria");
   return (
-    <section className="panel">
-      <h2>Auditoria · últimos 50 eventos</h2>
+    <ActionSheet label="Histórico de alterações" title="Últimas 50 alterações">
       {(data as M.Audit[])?.map((a) => (
         <p className="small" key={a.id}>
           {dateBR(a.criado_em)} · {a.acao} · {a.tabela} ·{" "}
@@ -1849,6 +1777,6 @@ async function AuditTrail({ obra }: { obra: string }) {
         </p>
       ))}
       {!data?.length && <p className="muted">Nenhum evento registrado.</p>}
-    </section>
+    </ActionSheet>
   );
 }

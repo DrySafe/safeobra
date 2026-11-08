@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState, useTransition, useId, type ReactNode } from "react";
-import { useReading, useRefresh } from "./navigation";
+import { useCloseDialog } from "./simple-ui";
+import { useNotice, useReading, useRefresh } from "./navigation";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import * as S from "@/lib/schemas";
@@ -84,6 +85,8 @@ export function DataForm({
   const ref = useRef<HTMLFormElement>(null);
   const formId = useId();
   const router = useRouter();
+  const close = useCloseDialog(),
+    announce = useNotice();
   return (
     <form
       method="post"
@@ -133,7 +136,21 @@ export function DataForm({
             setResult(res);
             if (res.ok) {
               await onSaved?.(res);
+              if (!res.link && kind !== "login" && kind !== "signup") {
+                announce(res.message);
+                if (!onSaved) close?.();
+              }
               if (kind === "login") router.push("/");
+              else if (
+                !record &&
+                res.recordId &&
+                kind === "contratos_mao_de_obra"
+              )
+                router.push(
+                  `/?obra=${obra}&tab=equipe&contrato=${res.recordId}`,
+                );
+              else if (!record && res.recordId && kind === "obra")
+                router.push(`/?obra=${res.recordId}`);
               else {
                 ref.current?.reset();
               }
@@ -149,7 +166,7 @@ export function DataForm({
     >
       <div className="form-grid">
         {fields.map((f) => (
-          <div className="field" key={f.name}>
+          <div className="field" key={f.name} hidden={f.type === "hidden"}>
             <label htmlFor={formId + f.name}>{f.label}</label>
             {f.options ? (
               <select
@@ -229,6 +246,8 @@ export function ActionButton({
   const [result, setResult] = useState<A.Result>();
   const [pending, start] = useTransition();
   useReading(pending);
+  const close = useCloseDialog(),
+    announce = useNotice();
   return (
     <span>
       <button
@@ -240,6 +259,10 @@ export function ActionButton({
             try {
               const r = await action();
               setResult(r);
+              if (r.ok && !r.link) {
+                announce(r.message);
+                close?.();
+              }
               // Server mutations already return the revalidated RSC tree.
               // Signed URL reads must not refresh every dataset.
             } catch {
