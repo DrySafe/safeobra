@@ -127,6 +127,8 @@ Exemplo de descrição: “2 pedreiros; retirar porcelanato e escavar 3 furos de
 
 ## Navegação e uso no celular
 
+As consultas independentes de cada tela são feitas no mesmo lote paralelo, incluindo o histórico dos relatórios. Fontes completas de preços são carregadas em **Serviços**; as outras áreas leem os valores atuais sem transportar o JSON da pesquisa. A região `pdx1` da Vercel fica próxima ao Supabase deste projeto (`us-west-2`). Nenhum resultado financeiro ou sessão é colocado em cache compartilhado: autenticação, permissões, RLS e atualização após salvar permanecem nas leituras e ações existentes.
+
 O tema escuro usa fundo preto, painéis quase pretos e texto claro neutro, com cores próprias para avisos, erros, indicadores e mensagens de confirmação. A preferência automática do dispositivo é respeitada; o controle em **Conta → Alternar tema** alterna a aparência atual, inclusive quando ela veio do sistema.
 
 O aplicativo tem quatro áreas: **Resumo**, **Serviços**, **Financeiro** e **Obra**. No celular, a navegação fica fixa no rodapé. Financeiro reúne compras, pagamentos/descontos e relatórios em um seletor; Obra reúne diário/fotos e pessoas/configurações. Links antigos continuam funcionando dentro da área correspondente.

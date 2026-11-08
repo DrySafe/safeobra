@@ -278,6 +278,30 @@ export default async function Home({
       if (data.length < 1000) return result;
     }
   }
+  async function loadContractItems(): Promise<ContractItem[]> {
+    // Full price sources are displayed only in Serviços. Other views still
+    // read all current numeric values, without transferring the research JSON.
+    const rows = await all<ContractItem>(
+      "empreitada_itens",
+      tab === "equipe"
+        ? "*"
+        : "id,obra_id,contrato_id,nome,descricao,unidade,quantidade,classe,aprovado,valor_cobrado,percentual_executado,arquivado,valor_estimado,estimado_minimo,estimado_maximo,pesquisado_em,criado_em,criado_por",
+    );
+    return tab === "equipe"
+      ? rows
+      : rows.map((item) => ({ ...item, estimativa_json: null }));
+  }
+  async function loadAudit(): Promise<M.Audit[]> {
+    if (tab !== "relatorios") return [];
+    const { data, error } = await client
+      .from("audit_logs")
+      .select("id,tabela,acao,user_id,criado_em")
+      .eq("obra_id", obraId)
+      .order("id", { ascending: false })
+      .limit(50);
+    if (error) throw new Error("Falha ao carregar auditoria");
+    return (data ?? []) as M.Audit[];
+  }
   const [
     expenses,
     contracts,
@@ -287,6 +311,11 @@ export default async function Home({
     occurrences,
     attachments,
     executions,
+    contractItems,
+    paymentAllocations,
+    itemExecutions,
+    references,
+    audits,
   ] = await Promise.all([
     all<M.Expense>("gastos"),
     all<M.Contract>("contratos_mao_de_obra"),
@@ -296,16 +325,14 @@ export default async function Home({
     all<M.Occurrence>("ocorrencias"),
     all<M.Attachment>("anexos"),
     all<M.Execution>("execucoes"),
+    loadContractItems(),
+    all<PaymentAllocation>("pagamento_itens"),
+    all<ItemExecution>("empreitada_execucoes"),
+    tab === "estimativas"
+      ? all<CostSample>("referencias_servicos")
+      : Promise.resolve([]),
+    loadAudit(),
   ]);
-  const [contractItems, paymentAllocations, itemExecutions] = await Promise.all(
-    [
-      all<ContractItem>("empreitada_itens"),
-      all<PaymentAllocation>("pagamento_itens"),
-      all<ItemExecution>("empreitada_execucoes"),
-    ],
-  );
-  const references =
-    tab === "estimativas" ? await all<CostSample>("referencias_servicos") : [];
   const historicalSamples: CostSample[] =
     tab === "estimativas"
       ? stages
@@ -1573,7 +1600,7 @@ export default async function Home({
                     </p>
                   ))}
               </section>
-              <AuditTrail obra={obraId} />
+              <AuditTrail rows={audits} />
             </>
           )}
           {tab === "estimativas" && (
@@ -1766,24 +1793,16 @@ async function Members({
   );
 }
 
-async function AuditTrail({ obra }: { obra: string }) {
-  const c = await db();
-  const { data, error } = await c
-    .from("audit_logs")
-    .select("id,tabela,acao,user_id,criado_em")
-    .eq("obra_id", obra)
-    .order("id", { ascending: false })
-    .limit(50);
-  if (error) throw new Error("Falha ao carregar auditoria");
+function AuditTrail({ rows }: { rows: M.Audit[] }) {
   return (
     <ActionSheet label="Histórico de alterações" title="Últimas 50 alterações">
-      {(data as M.Audit[])?.map((a) => (
+      {rows.map((a) => (
         <p className="small" key={a.id}>
           {dateBR(a.criado_em)} · {a.acao} · {a.tabela} ·{" "}
           {a.user_id?.slice(0, 8)}
         </p>
       ))}
-      {!data?.length && <p className="muted">Nenhum evento registrado.</p>}
+      {!rows.length && <p className="muted">Nenhum evento registrado.</p>}
     </ActionSheet>
   );
 }
