@@ -89,8 +89,8 @@ const measurementFields = (stage?: M.Stage): Field[] => [
     value: String(stage?.quantidade ?? 1),
   },
 ];
-const expenseFields: Field[] = [
-  category,
+const expenseFields = (suggestions: string[]): Field[] => [
+  { name: "categoria", label: "Categoria", suggestions },
   { name: "descricao", label: "Descrição" },
   { name: "fornecedor", label: "Fornecedor / loja" },
   { name: "quantidade", label: "Quantidade", type: "number", value: "1" },
@@ -449,6 +449,10 @@ export default async function Home({
   ];
   const selectedContract =
     contracts.find((c) => c.id === query.contrato) ?? contracts[0];
+  const expenseCategories = [
+    ...new Set([...categories, ...expenses.map((e) => e.categoria)]),
+  ].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const expenseFormFields = expenseFields(expenseCategories);
   const visibleExpenses = expenses.filter(
     (e) =>
       (!query.categoria || e.categoria === query.categoria) &&
@@ -618,7 +622,7 @@ export default async function Home({
                 <section className="panel">
                   <h2>Gastos por categoria</h2>
                   {total ? (
-                    categories
+                    expenseCategories
                       .filter((cat) =>
                         expenses.some((e) => e.categoria === cat),
                       )
@@ -721,7 +725,10 @@ export default async function Home({
                     title="Despesa e comprovantes"
                     primary
                   >
-                    <ExpenseCreateForm obra={obraId} fields={expenseFields} />
+                    <ExpenseCreateForm
+                      obra={obraId}
+                      fields={expenseFormFields}
+                    />
                   </ActionSheet>
                 )}
                 <ActionSheet label="Filtros" title="Filtrar despesas">
@@ -739,7 +746,7 @@ export default async function Home({
                         defaultValue={query.categoria ?? ""}
                       >
                         <option value="">Todas</option>
-                        {categories.map((c) => (
+                        {expenseCategories.map((c) => (
                           <option key={c}>{c}</option>
                         ))}
                       </select>
@@ -863,7 +870,7 @@ export default async function Home({
                             kind="gastos"
                             obra={obraId}
                             record={e.id}
-                            fields={prefill(expenseFields, e)}
+                            fields={prefill(expenseFormFields, e)}
                           />
                           <DeleteButton
                             obra={obraId}

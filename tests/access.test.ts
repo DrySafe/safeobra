@@ -94,6 +94,25 @@ test("USER lê obra mas não insere gasto", async () =>
     );
     await assert.rejects(client.query(expense, [obra]), /row-level security/);
   }));
+test("ADM cadastra e edita categoria personalizada mantendo o total do gasto", async () =>
+  asUser(admin, async () => {
+    const { rows } = await client.query(
+      expense.replace("'Extras'", "'Locação de ferramentas'"),
+      [obra],
+    );
+    const result = await client.query(
+      "update public.gastos set categoria=$1 where id=$2 returning categoria,valor_total",
+      ["Aluguel de equipamentos", rows[0].id],
+    );
+    assert.equal(result.rows[0].categoria, "Aluguel de equipamentos");
+    assert.equal(Number(result.rows[0].valor_total), 5000);
+    await assert.rejects(
+      client.query("update public.gastos set categoria='   ' where id=$1", [
+        rows[0].id,
+      ]),
+      /check constraint/,
+    );
+  }));
 test("não membro não enxerga obra nem dados financeiros", async () =>
   asUser(outsider, async () => {
     assert.equal(
@@ -835,5 +854,144 @@ test("pesquisa só é salva pelo servidor; alteração de escopo invalida cache 
         }),
       ],
       /alterado durante/,
+    );
+  }));
+
+test("editar desconto move apenas o saldo pendente entre fechamentos e preserva pagamentos", async () =>
+  asUser(admin, async () => {
+    const c = (
+      await client.query(
+        "insert into public.contratos_mao_de_obra(obra_id,profissional,tipo,valor_geral) values($1,'Teste de desconto','empreitada',100000) returning id",
+        [obra],
+      )
+    ).rows[0].id;
+    const d = (
+      await client.query(
+        "insert into public.descontos_profissional(obra_id,contrato_id,descricao,valor,aplicacao) values($1,$2,'Ferramentas',15000,'semanal') returning id",
+        [obra, c],
+      )
+    ).rows[0].id;
+    async function pay(amount: number, final = false) {
+      const p = (
+        await client.query(
+          "select public.record_payment($1,null,current_date,$2,'Teste','Pix','semanal',$3) id",
+          [c, amount, final],
+        )
+      ).rows[0].id;
+      return (
+        await client.query(
+          "select id,valor_bruto,desconto,valor from public.pagamentos where id=$1",
+          [p],
+        )
+      ).rows[0];
+    }
+    async function edit(amount: number, closing: string) {
+      await client.query(
+        "select public.update_discount($1,$2,'Ferramentas revisadas',$3,$4)",
+        [obra, d, amount, closing],
+      );
+    }
+    const original = await pay(5000);
+    await edit(20000, "final");
+    assert.equal(Number((await pay(10000)).desconto), 0);
+    await edit(20000, "semanal");
+    assert.equal(Number((await pay(10000)).desconto), 10000);
+    await edit(20000, "final");
+    assert.equal(Number((await pay(10000, true)).desconto), 5000);
+    assert.deepEqual(
+      (
+        await client.query(
+          "select id,valor_bruto,desconto,valor from public.pagamentos where id=$1",
+          [original.id],
+        )
+      ).rows[0],
+      original,
+    );
+    const discount = (
+      await client.query(
+        "select valor,aplicado,aplicacao from public.descontos_profissional where id=$1",
+        [d],
+      )
+    ).rows[0];
+    assert.equal(Number(discount.valor), 20000);
+    assert.equal(Number(discount.aplicado), 20000);
+    assert.equal(discount.aplicacao, "final");
+    await client.query("savepoint invalid_edit");
+    await assert.rejects(edit(19999, "semanal"), /já aplicado/);
+    await client.query("rollback to savepoint invalid_edit");
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select count(*) n from public.audit_logs where registro_id=$1 and acao='UPDATE' and depois->>'descricao'='Ferramentas revisadas'",
+            [d],
+          )
+        ).rows[0].n,
+      ) >= 3,
+      true,
+    );
+  }));
+
+test("edição de desconto impede USER, terceiro, obra incorreta e alteração direta do aplicado", async () =>
+  asUser(admin, async () => {
+    const c = (
+      await client.query(
+        "insert into public.contratos_mao_de_obra(obra_id,profissional,tipo,valor_geral) values($1,'Teste de permissão','empreitada',100000) returning id",
+        [obra],
+      )
+    ).rows[0].id;
+    const d = (
+      await client.query(
+        "insert into public.descontos_profissional(obra_id,contrato_id,descricao,valor,aplicacao) values($1,$2,'Ferramentas',15000,'semanal') returning id",
+        [obra, c],
+      )
+    ).rows[0].id;
+    for (const uid of [user, outsider]) {
+      await client.query("savepoint unauthorized_edit");
+      await client.query("select set_config('request.jwt.claim.sub',$1,true)", [
+        uid,
+      ]);
+      await assert.rejects(
+        client.query(
+          "select public.update_discount($1,$2,'Alterado',20000,'final')",
+          [obra, d],
+        ),
+        /Sem permissão/,
+      );
+      await client.query("rollback to savepoint unauthorized_edit");
+    }
+    await client.query(
+      "insert into public.obras(nome) values('Outra obra de teste')",
+    );
+    const other = (
+      await client.query(
+        "select id from public.obras where nome='Outra obra de teste'",
+      )
+    ).rows[0].id;
+    await client.query("savepoint wrong_scope");
+    await assert.rejects(
+      client.query(
+        "select public.update_discount($1,$2,'Alterado',20000,'final')",
+        [other, d],
+      ),
+      /não encontrado/,
+    );
+    await client.query("rollback to savepoint wrong_scope");
+    await client.query("savepoint direct_edit");
+    await assert.rejects(
+      client.query(
+        "update public.descontos_profissional set aplicado=100 where id=$1",
+        [d],
+      ),
+      /permission denied/,
+    );
+    await client.query("rollback to savepoint direct_edit");
+    assert.equal(
+      (
+        await client.query(
+          "select has_function_privilege('anon','public.update_discount(uuid,uuid,text,bigint,text)','EXECUTE') allowed",
+        )
+      ).rows[0].allowed,
+      false,
     );
   }));

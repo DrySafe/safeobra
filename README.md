@@ -61,6 +61,7 @@ As Server Actions do Next.js podem responder HTTP 200 mesmo quando a operação 
 - Adiantamentos por serviço são permitidos mesmo antes de 100%, conforme decisão do usuário. Pagamentos não podem quitar mais que o valor contratado. A interface distingue adiantamento de valor executado.
 - Diária/avulso: cadastre uma contratação com o teto acordado e registre os pagamentos semanais/avulsos; o plano ponderado é específico de empreitadas.
 - Desconto semanal é aplicado no próximo fechamento. Desconto final só é aplicado quando o ADM marca fechamento final. Desconto excedente fica pendente para os fechamentos seguintes, conforme decisão do usuário; nunca produz pagamento líquido negativo.
+- Em **Financeiro → Pagamentos**, toque em um desconto e em **Editar** para alterar descrição, valor total ou fechamento de destino. A mudança de fechamento afeta apenas o saldo pendente; o valor total não pode ficar abaixo do que já foi aplicado. A edição é auditada, exclusiva do ADM e não altera pagamentos anteriores.
 - Cada pagamento registra bruto, descontos e líquido. Bruto quita a empreitada; o dinheiro desembolsado é o líquido. As transações travam o contrato para evitar fechamentos concorrentes inconsistentes.
 - Corrigir um pagamento estorna o anterior e cria o novo **na mesma transação**. Um erro desfaz tudo. Estorno restaura os descontos e mantém o lançamento anterior e seus anexos no histórico. Não existe exclusão silenciosa de pagamentos.
 - Gastos e pagamentos são apresentados separadamente para evitar duplicar mão de obra já registrada como gasto. O total de gastos é o livro de gastos, não a soma automática de dois livros que podem representar o mesmo desembolso.
@@ -127,6 +128,8 @@ O aplicativo tem quatro áreas: **Resumo**, **Serviços**, **Financeiro** e **Ob
 As listas mostram até seis registros por página, com busca e paginação. Toque no registro para abrir um único painel com detalhes e edição, sem empilhar caixas abertas. Serviços mantêm valores, execução, pagamentos e fontes no mesmo painel. Listas importadas também têm uma prévia compacta; somente o item escolhido abre os campos de edição. O contrato em execução mostra apenas os campos que podem ser alterados, preservando o preço original. Dados completos e ações menos frequentes ficam em **Opções**.
 
 Despesas e registros do diário permitem enviar arquivos junto com o cadastro. Se o envio falhar, o reenvio usa o registro já criado. Permissões e regras financeiras continuam sendo verificadas no servidor.
+
+Em despesas, **Categoria** aceita um nome digitado ou uma sugestão. Categorias já usadas na obra aparecem nas sugestões, nos filtros, no resumo por categoria e na exportação CSV.
 
 ## Tabela de serviços da empreitada e IA
 

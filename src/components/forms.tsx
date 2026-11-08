@@ -11,6 +11,7 @@ export type Field = {
   label: string;
   type?: string;
   options?: { value: string; label: string }[];
+  suggestions?: string[];
   optional?: boolean;
   scale?: number;
   value?: string;
@@ -194,6 +195,12 @@ export function DataForm({
                 id={formId + f.name}
                 name={f.name}
                 type={f.type ?? "text"}
+                list={
+                  f.suggestions ? formId + f.name + "-suggestions" : undefined
+                }
+                placeholder={
+                  f.suggestions ? "Escolha ou digite uma categoria" : undefined
+                }
                 defaultValue={f.value ?? ""}
                 required={!f.optional && f.type !== "checkbox"}
                 step={f.type === "number" ? "any" : undefined}
@@ -209,6 +216,13 @@ export function DataForm({
                       : undefined
                 }
               />
+            )}
+            {f.suggestions && (
+              <datalist id={formId + f.name + "-suggestions"}>
+                {f.suggestions.map((value) => (
+                  <option key={value} value={value} />
+                ))}
+              </datalist>
             )}
           </div>
         ))}

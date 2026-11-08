@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { access } from "@/server/access";
 import { z } from "zod";
-import { id, categories } from "@/lib/schemas";
+import { id, expenseCategorySchema } from "@/lib/schemas";
 import { csv } from "@/lib/finance";
 const filters = z.object({
   obra: id,
   busca: z.string().max(300).optional(),
-  categoria: z.enum(categories).optional(),
+  categoria: expenseCategorySchema.optional(),
   status: z.enum(["pendente", "entregue"]).optional(),
   inicio: z.iso.date().optional(),
   fim: z.iso.date().optional(),

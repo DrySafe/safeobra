@@ -86,6 +86,37 @@ export function ContractPayments({
       },
     ];
   }
+  function discountFields(d?: Discount): Field[] {
+    return [
+      {
+        name: "contrato_id",
+        label: "Contrato",
+        type: "hidden",
+        value: contract.id,
+      },
+      {
+        name: "descricao",
+        label: "Descrição do desconto",
+        value: d?.descricao,
+      },
+      {
+        name: "valor",
+        label: "Valor total do desconto (R$)",
+        type: "number",
+        scale: 100,
+        value: d ? String(Number(d.valor) / 100) : "",
+      },
+      {
+        name: "aplicacao",
+        label: "Fechamento de destino",
+        value: d?.aplicacao,
+        options: [
+          { value: "semanal", label: "Próximo fechamento semanal" },
+          { value: "final", label: "Fechamento final" },
+        ],
+      },
+    ];
+  }
   return (
     <div className="contract-payments">
       <div className="section-title">
@@ -182,29 +213,7 @@ export function ContractPayments({
             <DataForm
               kind="descontos_profissional"
               obra={obra}
-              fields={[
-                {
-                  name: "contrato_id",
-                  label: "Contrato",
-                  type: "hidden",
-                  value: contract.id,
-                },
-                { name: "descricao", label: "Material ou ferramenta" },
-                {
-                  name: "valor",
-                  label: "Valor (R$)",
-                  type: "number",
-                  scale: 100,
-                },
-                {
-                  name: "aplicacao",
-                  label: "Aplicar",
-                  options: [
-                    { value: "semanal", label: "Próximo fechamento" },
-                    { value: "final", label: "Fechamento final" },
-                  ],
-                },
-              ]}
+              fields={discountFields()}
             />
           </ActionSheet>
         )}
@@ -215,12 +224,22 @@ export function ContractPayments({
           id: d.id,
           title: d.descricao,
           subtitle:
-            d.aplicacao === "final" ? "Fechamento final" : "Fechamento semanal",
+            d.aplicacao === "final"
+              ? "Fechamento final"
+              : "Próximo fechamento semanal",
           amount: money(Number(d.valor)),
           status: `Pendente: ${money(Number(d.valor) - Number(d.aplicado))}`,
           details: (
             <>
               <dl className="detail-values">
+                <div>
+                  <dt>Fechamento de destino</dt>
+                  <dd>
+                    {d.aplicacao === "final"
+                      ? "Fechamento final"
+                      : "Próximo fechamento semanal"}
+                  </dd>
+                </div>
                 <div>
                   <dt>Valor</dt>
                   <dd>{money(Number(d.valor))}</dd>
@@ -243,6 +262,22 @@ export function ContractPayments({
               />
             </>
           ),
+          edit: admin ? (
+            <>
+              <p className="small muted">
+                Já aplicado: {money(Number(d.aplicado))}. O valor total não pode
+                ser menor que esse valor. A mudança de fechamento vale para o
+                saldo pendente.
+              </p>
+              <DataForm
+                kind="descontos_profissional"
+                obra={obra}
+                record={d.id}
+                fields={discountFields(d)}
+                title="Salvar desconto"
+              />
+            </>
+          ) : undefined,
         }))}
       />
     </div>

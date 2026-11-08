@@ -21,13 +21,22 @@ const expense = {
 test("gasto aceita entrega não informada e observações vazias", () => {
   assert.equal(expenseSchema.parse(expense).observacoes, "");
 });
-test("entrada financeira rejeita valores negativos e categoria desconhecida", () => {
+test("despesa aceita categoria personalizada e rejeita valor negativo ou categoria vazia", () => {
+  assert.equal(
+    expenseSchema.parse({ ...expense, categoria: "  Locação de ferramentas  " })
+      .categoria,
+    "Locação de ferramentas",
+  );
   assert.equal(
     expenseSchema.safeParse({ ...expense, valor_unitario: -1 }).success,
     false,
   );
   assert.equal(
-    expenseSchema.safeParse({ ...expense, categoria: "Fraude" }).success,
+    expenseSchema.safeParse({ ...expense, categoria: "   " }).success,
+    false,
+  );
+  assert.equal(
+    expenseSchema.safeParse({ ...expense, categoria: "a".repeat(301) }).success,
     false,
   );
 });

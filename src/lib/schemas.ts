@@ -19,8 +19,9 @@ export const loginSchema = z.object({
   password: z.string().min(10).max(128),
 });
 export const obraSchema = z.object({ nome: text, orcamento: cents });
+export const expenseCategorySchema = text;
 export const expenseSchema = z.object({
-  categoria: z.enum(categories),
+  categoria: expenseCategorySchema,
   descricao: text,
   fornecedor: text,
   quantidade: z.coerce.number().positive().max(1000000),

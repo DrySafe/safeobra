@@ -138,6 +138,28 @@ export async function updateRecord(
     const { client } = await access(obra, true);
     S.id.parse(record);
     let data: Record<string, unknown>;
+    if (entity === "descontos_profissional") {
+      const parsed = S.discountSchema.parse(raw);
+      const { error } = await client.rpc("update_discount", {
+        p_obra: obra,
+        p_desconto: record,
+        p_descricao: parsed.descricao,
+        p_valor: parsed.valor,
+        p_aplicacao: parsed.aplicacao,
+      });
+      if (error)
+        throw new Error(
+          error.code === "P0001"
+            ? error.message
+            : "Não foi possível editar o desconto",
+        );
+      revalidatePath("/");
+      return {
+        ok: true,
+        message:
+          "Desconto atualizado. O fechamento escolhido vale para o saldo pendente.",
+      };
+    }
     if (entity === "gastos") data = S.expenseSchema.parse(raw);
     else if (entity === "contratos_mao_de_obra")
       data = S.contractSchema.parse(raw);
