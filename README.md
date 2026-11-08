@@ -38,6 +38,8 @@ Todas as variáveis do app são consumidas no servidor. Na Vercel, cadastre `SUP
 
 ## Cadastro e envio de confirmação
 
+Login e cadastro oferecem **Mostrar/Ocultar senha** e aceitam senhas com pelo menos **6 caracteres**. No Supabase Auth, `password_min_length` deve ser `6`, com a mesma política de caracteres do aplicativo. A visibilidade começa oculta a cada abertura do formulário.
+
 O cadastro mantém a confirmação de e-mail obrigatória. Configure um **SMTP próprio** em [Supabase → Authentication → SMTP](https://supabase.com/dashboard/project/kjryjmuauloebjvbcvqx/auth/smtp): host, porta, usuário, senha e remetente verificado do seu provedor. Não grave esses valores neste arquivo ou no Git.
 
 O serviço de e-mail padrão do Supabase tem restrição de destinatários e cota reduzida (o projeto estava configurado com 2 envios por hora). O erro `over_email_send_rate_limit`/HTTP 429 impede o envio de confirmação e precisa ser resolvido na configuração de e-mail. Aumentar o limite do app ou desativar a confirmação não resolve a configuração de entrega.

@@ -491,6 +491,20 @@ html[data-theme="dark"] {
 }
 
 /* Equal touch targets and a clear gap between primary and secondary auth actions. */
+.password-field {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.password-field input {
+  min-width: 0;
+  flex: 1;
+}
+.password-field button {
+  min-height: 48px;
+  min-width: 88px;
+  flex-shrink: 0;
+}
 .auth-actions {
   display: grid;
   gap: 12px;

@@ -16,7 +16,7 @@ const cents = z.coerce.number().int().min(0).max(100000000000);
 const day = z.iso.date();
 export const loginSchema = z.object({
   email: z.email().max(254),
-  password: z.string().min(10).max(128),
+  password: z.string().min(6, "Use pelo menos 6 caracteres na senha.").max(128),
 });
 export const obraSchema = z.object({ nome: text, orcamento: cents });
 export const expenseCategorySchema = text;

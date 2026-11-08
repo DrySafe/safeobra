@@ -2,6 +2,7 @@
 import { useRef, useState, useTransition, useId, type ReactNode } from "react";
 import { useCloseDialog } from "./simple-ui";
 import { useRememberedForm } from "./dialog-drafts";
+import { PasswordInput } from "./password-input";
 import { useNotice, useReading, useRefresh } from "./navigation";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
@@ -201,6 +202,16 @@ export function DataForm({
                   </option>
                 ))}
               </select>
+            ) : f.type === "password" ? (
+              <PasswordInput
+                id={formId + f.name}
+                name={f.name}
+                defaultValue={f.value}
+                autoComplete={
+                  kind === "signup" ? "new-password" : "current-password"
+                }
+                required={!f.optional}
+              />
             ) : f.type === "textarea" ? (
               <textarea
                 id={formId + f.name}
@@ -223,16 +234,8 @@ export function DataForm({
                 required={!f.optional && f.type !== "checkbox"}
                 step={f.type === "number" ? "any" : undefined}
                 min={f.type === "number" ? 0 : undefined}
-                maxLength={f.type === "password" ? 128 : 300}
-                autoComplete={
-                  f.type === "password"
-                    ? kind === "signup"
-                      ? "new-password"
-                      : "current-password"
-                    : f.type === "email"
-                      ? "email"
-                      : undefined
-                }
+                maxLength={300}
+                autoComplete={f.type === "email" ? "email" : undefined}
               />
             )}
             {f.suggestions && (
@@ -466,7 +469,7 @@ export function LoginForm() {
           { name: "email", label: "E-mail", type: "email" },
           {
             name: "password",
-            label: "Senha (mínimo 10 caracteres)",
+            label: "Senha (mínimo 6 caracteres)",
             type: "password",
           },
         ]}

@@ -5,7 +5,20 @@ import {
   paymentSchema,
   occurrenceSchema,
   MAX_UPLOAD,
+  loginSchema,
 } from "../src/lib/schemas.ts";
+test("autenticação aceita senha de 6 caracteres e mantém o conteúdo sem cortar espaços", () => {
+  const data = { email: "teste@example.invalid", password: "abc123" };
+  assert.equal(loginSchema.parse(data).password, "abc123");
+  assert.equal(
+    loginSchema.safeParse({ ...data, password: "abc12" }).success,
+    false,
+  );
+  assert.equal(
+    loginSchema.parse({ ...data, password: " abc123 " }).password,
+    " abc123 ",
+  );
+});
 const expense = {
   categoria: "Extras",
   descricao: "Cimento",
