@@ -38,6 +38,8 @@ Todas as variáveis do app são consumidas no servidor. Na Vercel, cadastre `SUP
 
 ## Cadastro e envio de confirmação
 
+**Entrar** fica em `/login`; **Criar conta** fica em `/cadastro`. As telas têm títulos, instruções e destaques visuais próprios. O cadastro explica as etapas de criação e confirmação por e-mail; os links entre as telas também funcionam com o botão Voltar do navegador.
+
 Login e cadastro oferecem **Mostrar/Ocultar senha** e aceitam senhas com pelo menos **6 caracteres**. No Supabase Auth, `password_min_length` deve ser `6`, com a mesma política de caracteres do aplicativo. A visibilidade começa oculta a cada abertura do formulário.
 
 O cadastro mantém a confirmação de e-mail obrigatória. Configure um **SMTP próprio** em [Supabase → Authentication → SMTP](https://supabase.com/dashboard/project/kjryjmuauloebjvbcvqx/auth/smtp): host, porta, usuário, senha e remetente verificado do seu provedor. Não grave esses valores neste arquivo ou no Git.
@@ -124,6 +126,8 @@ Duas pessoas trabalhando um dia equivalem a duas diárias individuais. Três peq
 Exemplo de descrição: “2 pedreiros; retirar porcelanato e escavar 3 furos de 60 × 60 cm por 1 m de profundidade; posicionar as treliças; abrir 3 rasgos de 2 m × 30 cm”. Complete profundidade dos rasgos/espessura da parede, dimensões/preparo das treliças, contrapiso/laje, solo e ferramentas para melhorar a estimativa. Os testes usam valores fictícios para verificar a aritmética; não são cotações de Aracaju.
 
 ## Navegação e uso no celular
+
+O tema escuro usa fundo preto, painéis quase pretos e texto claro neutro, com cores próprias para avisos, erros, indicadores e mensagens de confirmação. A preferência automática do dispositivo é respeitada; o controle em **Conta → Alternar tema** alterna a aparência atual, inclusive quando ela veio do sistema.
 
 O aplicativo tem quatro áreas: **Resumo**, **Serviços**, **Financeiro** e **Obra**. No celular, a navegação fica fixa no rodapé. Financeiro reúne compras, pagamentos/descontos e relatórios em um seletor; Obra reúne diário/fotos e pessoas/configurações. Links antigos continuam funcionando dentro da área correspondente.
 

@@ -3,7 +3,7 @@ import { useRef, useState, useTransition, useId, type ReactNode } from "react";
 import { useCloseDialog } from "./simple-ui";
 import { useRememberedForm } from "./dialog-drafts";
 import { PasswordInput } from "./password-input";
-import { useNotice, useReading, useRefresh } from "./navigation";
+import { AppLink, useNotice, useReading, useRefresh } from "./navigation";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import * as S from "@/lib/schemas";
@@ -25,7 +25,10 @@ export function Theme() {
       aria-label="Alternar tema"
       onClick={() => {
         const el = document.documentElement;
-        el.dataset.theme = el.dataset.theme === "dark" ? "light" : "dark";
+        const dark = el.dataset.theme
+          ? el.dataset.theme === "dark"
+          : window.matchMedia("(prefers-color-scheme: dark)").matches;
+        el.dataset.theme = dark ? "light" : "dark";
       }}
     >
       ◐
@@ -457,30 +460,72 @@ export function Print() {
     </button>
   );
 }
-export function LoginForm() {
-  const [signup, setSignup] = useState(false);
+export function LoginForm({ signup = false }: { signup?: boolean }) {
   return (
-    <div className="auth-actions">
-      <DataForm
-        key={String(signup)}
-        kind={signup ? "signup" : "login"}
-        title={signup ? "Criar minha conta" : "Entrar"}
-        fields={[
-          { name: "email", label: "E-mail", type: "email" },
-          {
-            name: "password",
-            label: "Senha (mínimo 6 caracteres)",
-            type: "password",
-          },
-        ]}
-      />
-      <button
-        type="button"
-        className="secondary auth-switch"
-        onClick={() => setSignup(!signup)}
+    <div className="auth-screen" data-mode={signup ? "signup" : "login"}>
+      <header className="auth-intro">
+        <span className="auth-mode-badge">
+          {signup ? "Primeiro acesso" : "Já sou cadastrado"}
+        </span>
+        <h1>{signup ? "Crie sua conta" : "Entrar na sua conta"}</h1>
+        <p className="muted">
+          {signup
+            ? "Cadastre seu e-mail e escolha uma senha para começar a acompanhar sua obra."
+            : "Acesse com o e-mail e a senha que você já cadastrou."}
+        </p>
+      </header>
+      <section
+        className="panel auth-card auth-actions"
+        aria-label={signup ? "Cadastro de usuário" : "Acesso à conta"}
       >
-        {signup ? "Já tenho conta" : "Criar conta"}
-      </button>
+        {signup && (
+          <ol className="auth-flow" aria-label="Etapas do cadastro">
+            <li aria-current="step">
+              <span>1</span> Cadastro
+            </li>
+            <li>
+              <span>2</span> Confirmação por e-mail
+            </li>
+          </ol>
+        )}
+        <DataForm
+          key={String(signup)}
+          kind={signup ? "signup" : "login"}
+          title={signup ? "Criar minha conta" : "Entrar"}
+          fields={[
+            {
+              name: "email",
+              label: signup ? "Seu e-mail" : "E-mail cadastrado",
+              type: "email",
+            },
+            {
+              name: "password",
+              label: signup
+                ? "Crie uma senha (mínimo 6 caracteres)"
+                : "Senha (mínimo 6 caracteres)",
+              type: "password",
+            },
+          ]}
+        />
+        <p className="small muted auth-help">
+          {signup
+            ? "Após criar sua conta, abra o link enviado ao seu e-mail para confirmar o cadastro."
+            : "Use seu e-mail já confirmado para acessar a obra."}
+        </p>
+      </section>
+      <div className="auth-alternative">
+        <p>
+          {signup
+            ? "Já tem uma conta no SafeObra?"
+            : "É a sua primeira vez aqui?"}
+        </p>
+        <AppLink
+          href={signup ? "/login" : "/cadastro"}
+          className="button secondary auth-switch"
+        >
+          {signup ? "Já tenho conta" : "Criar conta"}
+        </AppLink>
+      </div>
     </div>
   );
 }
