@@ -171,6 +171,8 @@ export function DataForm({
                 if (!onSaved) close?.();
               }
               if (kind === "login") router.push("/");
+              else if (kind === "signup" && res.redirectTo)
+                router.replace(res.redirectTo);
               else if (
                 !record &&
                 res.recordId &&
@@ -273,9 +275,15 @@ export function DataForm({
           {result.message}
           {result.link && (
             <p>
-              <a className="underline" href={result.link}>
-                {result.link}
-              </a>
+              {result.link.startsWith("/") ? (
+                <AppLink className="underline" href={result.link}>
+                  {result.linkLabel ?? result.link}
+                </AppLink>
+              ) : (
+                <a className="underline" href={result.link}>
+                  {result.linkLabel ?? result.link}
+                </a>
+              )}
             </p>
           )}
         </div>
@@ -499,7 +507,7 @@ export function LoginForm({ signup = false }: { signup?: boolean }) {
               <span>1</span> Cadastro
             </li>
             <li>
-              <span>2</span> Confirmação por e-mail
+              <span>2</span> Acesso à conta
             </li>
           </ol>
         )}
@@ -524,8 +532,8 @@ export function LoginForm({ signup = false }: { signup?: boolean }) {
         />
         <p className="small muted auth-help">
           {signup
-            ? "Após criar sua conta, abra o link enviado ao seu e-mail para confirmar o cadastro."
-            : "Use seu e-mail já confirmado para acessar a obra."}
+            ? "Se for solicitada a confirmação por e-mail, abra o link recebido para concluir seu acesso."
+            : "Use seu e-mail e sua senha para acessar a obra."}
         </p>
       </section>
       <div className="auth-alternative">

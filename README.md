@@ -38,11 +38,13 @@ Todas as variáveis do app são consumidas no servidor. Na Vercel, cadastre `SUP
 
 ## Cadastro e envio de confirmação
 
-**Entrar** fica em `/login`; **Criar conta** fica em `/cadastro`. As telas têm títulos, instruções e destaques visuais próprios. O cadastro explica as etapas de criação e confirmação por e-mail; os links entre as telas também funcionam com o botão Voltar do navegador.
+**Entrar** fica em `/login`; **Criar conta** fica em `/cadastro`. As telas têm títulos, instruções e destaques visuais próprios. O cadastro explica as etapas de criação e acesso, incluindo confirmação por e-mail quando necessária; os links entre as telas também funcionam com o botão Voltar do navegador.
 
 Login e cadastro oferecem **Mostrar/Ocultar senha** e aceitam senhas com pelo menos **6 caracteres**. No Supabase Auth, `password_min_length` deve ser `6`, com a mesma política de caracteres do aplicativo. A visibilidade começa oculta a cada abertura do formulário.
 
-O cadastro mantém a confirmação de e-mail obrigatória. Configure um **SMTP próprio** em [Supabase → Authentication → SMTP](https://supabase.com/dashboard/project/kjryjmuauloebjvbcvqx/auth/smtp): host, porta, usuário, senha e remetente verificado do seu provedor. Não grave esses valores neste arquivo ou no Git.
+O cadastro respeita a configuração de confirmação do Supabase: quando retorna uma sessão, o app abre o acesso imediatamente; quando exige confirmação, orienta a abrir o link recebido. A aplicação não altera essa configuração. Se o e-mail já tem conta, o erro de cadastro oferece **Entrar na minha conta**, sem alterar a senha existente.
+
+Para projetos que exigem confirmação, configure um **SMTP próprio** em [Supabase → Authentication → SMTP](https://supabase.com/dashboard/project/kjryjmuauloebjvbcvqx/auth/smtp): host, porta, usuário, senha e remetente verificado do seu provedor. Não grave esses valores neste arquivo ou no Git.
 
 O serviço de e-mail padrão do Supabase tem restrição de destinatários e cota reduzida (o projeto estava configurado com 2 envios por hora). O erro `over_email_send_rate_limit`/HTTP 429 impede o envio de confirmação e precisa ser resolvido na configuração de e-mail. Aumentar o limite do app ou desativar a confirmação não resolve a configuração de entrega.
 

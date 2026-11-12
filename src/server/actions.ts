@@ -8,11 +8,17 @@ import { db } from "@/lib/supabase/server";
 import { access, session } from "./access";
 import { rate } from "./rate";
 import * as S from "@/lib/schemas";
-import { authErrorMessage, type AuthFailure } from "@/lib/auth-errors";
+import {
+  authErrorMessage,
+  isExistingAccountError,
+  type AuthFailure,
+} from "@/lib/auth-errors";
 export type Result = {
   ok: boolean;
   message: string;
   link?: string;
+  linkLabel?: string;
+  redirectTo?: string;
   recordId?: string;
 };
 const fail = (error: unknown): Result => ({
@@ -49,17 +55,26 @@ export async function authAction(kind: string, raw: unknown): Promise<Result> {
     const client = await db();
     if (kind === "signup") {
       const url = z.url().parse(process.env.APP_URL);
-      const { error } = await client.auth.signUp({
+      const { data: signup, error } = await client.auth.signUp({
         ...data,
         options: { emailRedirectTo: url + "/auth/callback" },
       });
       if (error) {
         logAuthFailure("signup", error);
-        return { ok: false, message: authErrorMessage("signup", error) };
+        return {
+          ok: false,
+          message: authErrorMessage("signup", error),
+          ...(isExistingAccountError(error)
+            ? { link: "/login", linkLabel: "Entrar na minha conta" }
+            : {}),
+        };
       }
       return {
         ok: true,
-        message: "Confira seu e-mail para confirmar o cadastro.",
+        message: signup.session
+          ? "Conta criada. Seu acesso está pronto."
+          : "Confira seu e-mail para confirmar o cadastro.",
+        ...(signup.session ? { redirectTo: "/" } : {}),
       };
     }
     if (kind !== "login") throw new Error("Operação inválida");

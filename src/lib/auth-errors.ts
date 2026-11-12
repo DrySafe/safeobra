@@ -1,11 +1,17 @@
 /** Safe messages only: never return provider error text or request data to clients. */
 export type AuthFailure = { code?: string; status?: number; message?: string };
+export function isExistingAccountError(error: AuthFailure): boolean {
+  return error.code === "user_already_exists" || error.code === "email_exists";
+}
 export function authErrorMessage(
   operation: "signup" | "login",
   error: AuthFailure,
 ): string {
   const code = error.code;
   if (operation === "signup") {
+    if (isExistingAccountError(error)) {
+      return "Este e-mail já possui uma conta. Entre com a senha que você cadastrou.";
+    }
     if (
       code === "over_email_send_rate_limit" ||
       (error.status === 429 &&

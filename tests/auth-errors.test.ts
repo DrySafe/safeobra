@@ -1,6 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { authErrorMessage } from "../src/lib/auth-errors.ts";
+test("cadastro duplicado orienta a entrar na conta existente sem exibir dados do provedor", () => {
+  for (const code of ["user_already_exists", "email_exists"]) {
+    const message = authErrorMessage("signup", {
+      code,
+      status: 422,
+      message: "provider detail containing a private email",
+    });
+    assert.match(message, /já possui uma conta/);
+    assert.match(message, /Entre com a senha/);
+    assert.ok(!message.includes("private email"));
+  }
+  assert.doesNotMatch(
+    authErrorMessage("login", { code: "user_already_exists" }),
+    /já possui uma conta/,
+  );
+});
 test("cadastro informa limite de e-mails no formato atual do Supabase", () => {
   assert.match(
     authErrorMessage("signup", {
