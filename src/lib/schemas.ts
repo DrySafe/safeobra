@@ -92,6 +92,19 @@ export const occurrenceSchema = z.object({
   responsavel: optional,
 });
 export const inviteSchema = z.object({ role: z.enum(["admin", "user"]) });
+export const quoteGroupSchema = z.object({ nome: text, descricao: optional });
+export const quoteSchema = z.object({
+  grupo_id: id,
+  empresa: text,
+  itens: z.string().trim().min(1, "Informe os itens da proposta").max(2000),
+  valor_total: cents.refine(
+    (n) => n > 0,
+    "Informe um valor total maior que zero",
+  ),
+  prazo: z.string().trim().max(300).default(""),
+  condicoes: optional,
+  observacoes: optional,
+});
 export const uploadSchema = z.object({
   entity: z.enum([
     "gastos",
@@ -99,6 +112,7 @@ export const uploadSchema = z.object({
     "pagamentos",
     "descontos_profissional",
     "ocorrencias",
+    "orcamento_propostas",
   ]),
   entityId: id,
 });

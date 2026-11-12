@@ -104,6 +104,8 @@ const schemas = {
   descontos_profissional: S.discountSchema,
   ocorrencias: S.occurrenceSchema,
   referencias_servicos: S.serviceReferenceSchema,
+  orcamento_grupos: S.quoteGroupSchema,
+  orcamento_propostas: S.quoteSchema,
 };
 export async function createRecord(
   obra: string,
@@ -163,7 +165,11 @@ export async function updateRecord(
             : "Desconto atualizado.",
       };
     }
-    if (entity === "gastos") data = S.expenseUpdateSchema.parse(raw);
+    if (entity === "orcamento_grupos") data = S.quoteGroupSchema.parse(raw);
+    else if (entity === "orcamento_propostas") {
+      const { grupo_id: _, ...changes } = S.quoteSchema.parse(raw);
+      data = changes;
+    } else if (entity === "gastos") data = S.expenseUpdateSchema.parse(raw);
     else if (entity === "contratos_mao_de_obra")
       data = S.contractSchema.parse(raw);
     else if (entity === "servicos") {
@@ -205,6 +211,32 @@ export async function markExpensePaid(
       throw new Error("Não foi possível marcar a despesa como paga");
     revalidatePath("/");
     return { ok: true, message: "Despesa marcada como paga" };
+  } catch (error) {
+    return fail(error);
+  }
+}
+export async function chooseQuote(
+  obra: string,
+  record: string,
+  selected: boolean,
+): Promise<Result> {
+  try {
+    const { client } = await access(obra, true);
+    S.id.parse(record);
+    z.boolean().parse(selected);
+    const { error, data } = await client
+      .from("orcamento_propostas")
+      .update({ selecionada: selected })
+      .eq("obra_id", obra)
+      .eq("id", record)
+      .select("id");
+    if (error || !data?.length)
+      throw new Error("Não foi possível atualizar a escolha");
+    revalidatePath("/");
+    return {
+      ok: true,
+      message: selected ? "Proposta escolhida" : "Escolha removida",
+    };
   } catch (error) {
     return fail(error);
   }

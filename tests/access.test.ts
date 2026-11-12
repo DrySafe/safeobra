@@ -76,6 +76,194 @@ async function asUser<T>(uid: string, fn: () => Promise<T>) {
   }
 }
 const expense = `insert into public.gastos(obra_id,categoria,descricao,fornecedor,quantidade,valor_unitario,data_compra,forma_pagamento,status_entrega) values($1,'Extras','Cimento','Loja',2,2500,current_date,'Pix','pendente') returning id,valor_total`;
+async function quoteFixture() {
+  const group = (
+    await client.query(
+      "insert into public.orcamento_grupos(obra_id,nome) values($1,'Telhado') returning id",
+      [obra],
+    )
+  ).rows[0].id;
+  const quotes = (
+    await client.query(
+      "insert into public.orcamento_propostas(obra_id,grupo_id,empresa,itens,valor_total) values($1,$2,'Loja A','35 m² com frete',10001),($1,$2,'Loja B','35 m² com frete',9999) returning id",
+      [obra, group],
+    )
+  ).rows;
+  return { group, quotes };
+}
+test("orçamentos permitem escolher várias propostas sem criar despesas ou pagamentos", async () =>
+  asUser(admin, async () => {
+    const { group } = await quoteFixture();
+    await client.query(
+      "update public.orcamento_propostas set selecionada=true where grupo_id=$1",
+      [group],
+    );
+    const totals = (
+      await client.query(
+        "select count(*) n,sum(valor_total) total from public.orcamento_propostas where selecionada",
+      )
+    ).rows[0];
+    assert.equal(Number(totals.n), 2);
+    assert.equal(Number(totals.total), 20000);
+    assert.equal(
+      (await client.query("select count(*) n from public.gastos")).rows[0].n,
+      "0",
+    );
+    assert.equal(
+      (await client.query("select count(*) n from public.pagamentos")).rows[0]
+        .n,
+      "0",
+    );
+    await client.query(
+      "update public.orcamento_propostas set selecionada=false,valor_total=9000 where empresa='Loja A'",
+    );
+    assert.equal(
+      (
+        await client.query(
+          "select sum(valor_total) total from public.orcamento_propostas where selecionada",
+        )
+      ).rows[0].total,
+      "9999",
+    );
+    assert.equal(
+      (
+        await client.query(
+          "select count(*) n from public.audit_logs where tabela='orcamento_propostas' and acao='UPDATE'",
+        )
+      ).rows[0].n,
+      "3",
+    );
+  }));
+test("membro visualiza propostas, mas não escolhe, edita ou cadastra", async () =>
+  asUser(admin, async () => {
+    const { group } = await quoteFixture();
+    await client.query("select set_config('request.jwt.claim.sub',$1,true)", [
+      user,
+    ]);
+    assert.equal(
+      (await client.query("select * from public.orcamento_grupos")).rowCount,
+      1,
+    );
+    assert.equal(
+      (await client.query("select * from public.orcamento_propostas")).rowCount,
+      2,
+    );
+    assert.equal(
+      (
+        await client.query(
+          "update public.orcamento_propostas set selecionada=true,valor_total=1",
+        )
+      ).rowCount,
+      0,
+    );
+    assert.equal(
+      (await client.query("update public.orcamento_grupos set nome='Outro'"))
+        .rowCount,
+      0,
+    );
+    await assert.rejects(
+      client.query(
+        "insert into public.orcamento_propostas(obra_id,grupo_id,empresa,itens,valor_total) values($1,$2,'Loja','Item',100)",
+        [obra, group],
+      ),
+      /row-level security/,
+    );
+  }));
+test("não membro não vê os orçamentos nem pode anexar arquivos", async () =>
+  asUser(admin, async () => {
+    const { quotes } = await quoteFixture();
+    await client.query("select set_config('request.jwt.claim.sub',$1,true)", [
+      outsider,
+    ]);
+    assert.equal(
+      (await client.query("select * from public.orcamento_grupos")).rowCount,
+      0,
+    );
+    assert.equal(
+      (await client.query("select * from public.orcamento_propostas")).rowCount,
+      0,
+    );
+    assert.equal(
+      (
+        await client.query(
+          "select public.can_attach($1,'orcamento_propostas',$2) allowed",
+          [obra, quotes[0].id],
+        )
+      ).rows[0].allowed,
+      false,
+    );
+  }));
+test("proposta não pode usar um grupo pertencente a outra obra", async () =>
+  asUser(admin, async () => {
+    const { group } = await quoteFixture();
+    // Creation adds membership in an AFTER trigger, so no SELECT/RETURNING here.
+    await client.query(
+      "insert into public.obras(nome) values('Outra obra de teste')",
+    );
+    await client.query("reset role");
+    const created = (
+      await client.query(
+        "select id from public.obras where nome='Outra obra de teste'",
+      )
+    ).rows[0].id;
+    await client.query("set local role authenticated");
+    await assert.rejects(
+      client.query(
+        "insert into public.orcamento_propostas(obra_id,grupo_id,empresa,itens,valor_total) values($1,$2,'Loja','Item',100)",
+        [created, group],
+      ),
+      /foreign key/,
+    );
+  }));
+test("ADM anexa documento ao orçamento; membro apenas lê e não pode enviar", async () =>
+  asUser(admin, async () => {
+    const { quotes } = await quoteFixture();
+    const q = quotes[0].id;
+    assert.equal(
+      (
+        await client.query(
+          "select public.can_attach($1,'orcamento_propostas',$2) allowed",
+          [obra, q],
+        )
+      ).rows[0].allowed,
+      true,
+    );
+    await client.query(
+      "insert into public.anexos(id,obra_id,entidade,entidade_id,path,mime,tamanho) values('70000000-0000-4000-8000-000000000001',$1,'orcamento_propostas',$2,$3,'application/pdf',100)",
+      [
+        obra,
+        q,
+        `${obra}/orcamento_propostas/${q}/70000000-0000-4000-8000-000000000001`,
+      ],
+    );
+    await client.query("select set_config('request.jwt.claim.sub',$1,true)", [
+      user,
+    ]);
+    assert.equal(
+      (
+        await client.query(
+          "select * from public.anexos where entidade='orcamento_propostas'",
+        )
+      ).rowCount,
+      1,
+    );
+    assert.equal(
+      (
+        await client.query(
+          "select public.can_attach($1,'orcamento_propostas',$2) allowed",
+          [obra, q],
+        )
+      ).rows[0].allowed,
+      false,
+    );
+    await assert.rejects(
+      client.query(
+        "update public.orcamento_propostas set grupo_id=$1 where id=$2",
+        [q, q],
+      ),
+      /permission denied/,
+    );
+  }));
 test("ADM insere gasto e total é calculado no banco", async () =>
   asUser(admin, async () => {
     const { rows } = await client.query(expense, [obra]);

@@ -37,6 +37,8 @@ import type * as M from "@/lib/models";
 import { ExpenseCreateForm } from "@/components/expense-form";
 import { ServiceEstimator } from "@/components/service-estimator";
 import { ContractWorkboard } from "@/components/contract-workboard";
+import { QuoteBoard } from "@/components/quote-board";
+import type { Quote, QuoteGroup } from "@/lib/quotes";
 import {
   contractItemMetrics,
   type ContractItem,
@@ -53,6 +55,7 @@ const tabs = [
   ["pagamentos", "↗", "Pagamentos da equipe"],
   ["estimativas", "≈", "Estimativa de serviços"],
   ["membros", "♧", "Equipe e convites"],
+  ["orcamentos", "≋", "Orçamentos"],
 ];
 const opts = (values: readonly string[]) =>
   values.map((value) => ({ value, label: value }));
@@ -272,7 +275,11 @@ export default async function Home({
     ),
     descontos_profissional: ["equipe", "pagamentos"].includes(tab),
     ocorrencias: ["dashboard", "diario", "relatorios"].includes(tab),
-    anexos: ["gastos", "equipe", "pagamentos", "diario"].includes(tab),
+    anexos: ["gastos", "equipe", "pagamentos", "diario", "orcamentos"].includes(
+      tab,
+    ),
+    orcamento_grupos: tab === "orcamentos",
+    orcamento_propostas: tab === "orcamentos",
     execucoes: tab === "equipe",
     empreitada_itens: [
       "dashboard",
@@ -300,6 +307,14 @@ export default async function Home({
         request = request.eq("entidade", "gastos");
       if (table === "anexos" && tab === "diario")
         request = request.eq("entidade", "ocorrencias");
+      if (table === "anexos" && tab === "orcamentos")
+        request = request.eq("entidade", "orcamento_propostas");
+      if (table === "anexos" && ["equipe", "pagamentos"].includes(tab))
+        request = request.in("entidade", [
+          "contratos_mao_de_obra",
+          "pagamentos",
+          "descontos_profissional",
+        ]);
       if (table === "servicos" && tab === "estimativas")
         request = request.eq("percentual_executado", 100);
       const { data, error } = await request;
@@ -346,6 +361,8 @@ export default async function Home({
     itemExecutions,
     references,
     audits,
+    quoteGroups,
+    quotes,
   ] = await Promise.all([
     all<M.Expense>("gastos"),
     all<M.Contract>("contratos_mao_de_obra"),
@@ -362,6 +379,8 @@ export default async function Home({
       ? all<CostSample>("referencias_servicos")
       : Promise.resolve([]),
     loadAudit(),
+    all<QuoteGroup>("orcamento_grupos"),
+    all<Quote>("orcamento_propostas"),
   ]);
   const historicalSamples: CostSample[] =
     tab === "estimativas"
@@ -638,6 +657,21 @@ export default async function Home({
                 </select>
               </label>
             </QueryForm>
+          )}
+          {tab === "orcamentos" && (
+            <QuoteBoard
+              key={obraId}
+              obra={obraId}
+              groups={quoteGroups.sort(
+                (a, b) =>
+                  a.criado_em.localeCompare(b.criado_em) ||
+                  a.id.localeCompare(b.id),
+              )}
+              quotes={quotes}
+              files={attachments}
+              activeGroup={query.grupo}
+              admin={admin}
+            />
           )}
           {tab === "dashboard" && (
             <>

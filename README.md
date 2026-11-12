@@ -92,6 +92,14 @@ USER cria problema, atenção, mudança ou andamento e anexa fotos pela câmera/
 
 Compare totais com os lançamentos; verifique gráfico de categorias, próximos serviços, últimos registros e execução ponderada. Abra Relatórios para resumo e últimos sete dias; use Imprimir / PDF para gerar documento pelo navegador e CSV para Excel. Confira versão móvel, tema claro/escuro, estados vazios e mensagens de erro.
 
+### 6. Orçamentos recebidos
+
+Em **Orçamentos → Novo grupo**, cadastre um item de compra/contratação, como Telhado, Piso ou Tintas. Em cada grupo, **Adicionar proposta** recebe empresa, itens/quantidades, valor total com frete e taxas, prazo, condições e fotos ou documentos. Anexos usam o mesmo Storage privado e limite de 4 MiB; um envio com falha pode ser retomado sem criar outra proposta.
+
+A tabela compara as propostas do grupo do menor para o maior preço, destaca empates no menor valor e mostra a diferença em reais. No celular, deslize a tabela; os rótulos permanecem visíveis. Marque uma ou mais propostas para registrar as escolhas; o resumo soma seus valores integrais. Confira o escopo para evitar somar propostas que cobrem o mesmo item. Escolher não cria despesas ou pagamentos. **Editar / anexar** corrige uma proposta ou permite enviar arquivos depois. Somente ADM cadastra, edita, anexa e escolhe; membros consultam e abrem arquivos privados da própria obra.
+
+Teste três grupos com propostas de valores diferentes e iguais, selecione várias, edite valores, recarregue a página e confira o total. Simule falha no upload e no salvamento de uma escolha. Verifique que um membro não consegue repetir uma alteração do ADM, que outra obra não pode usar o grupo e que uma conta sem vínculo não lê propostas ou anexos.
+
 ## IA e pesquisa de preços na internet (OpenAI)
 
 Em **Estimativas → Pesquisar preço na internet**, pergunte o valor do serviço. Não é necessário cadastrar uma base. A região inicial é **Aracaju/SE**, editável. Selecione **Somente mão de obra**, **Material e mão de obra** ou **Somente materiais** para não misturar composições. Exemplo: “Quanto custa reboco por m²? Preciso fazer 40 m²”. Uma pergunta por unidade pode ser respondida sem informar quantidade ou execução.
@@ -131,7 +139,7 @@ As consultas independentes de cada tela são feitas no mesmo lote paralelo, incl
 
 O tema escuro usa fundo preto, painéis quase pretos e texto claro neutro, com cores próprias para avisos, erros, indicadores e mensagens de confirmação. A preferência automática do dispositivo é respeitada; o controle em **Conta → Alternar tema** alterna a aparência atual, inclusive quando ela veio do sistema.
 
-O aplicativo tem quatro áreas: **Resumo**, **Serviços**, **Financeiro** e **Obra**. No celular, a navegação fica fixa no rodapé. Financeiro reúne compras, pagamentos/descontos e relatórios em um seletor; Obra reúne diário/fotos e pessoas/configurações. Links antigos continuam funcionando dentro da área correspondente.
+O aplicativo tem cinco áreas: **Resumo**, **Serviços**, **Financeiro**, **Obra** e **Orçamentos**, nesta ordem. No celular, a navegação fica fixa no rodapé. Financeiro reúne compras, pagamentos/descontos e relatórios em um seletor; Obra reúne diário/fotos e pessoas/configurações. Links antigos continuam funcionando dentro da área correspondente.
 
 As listas mostram até seis registros por página, com busca e paginação. Toque no registro para abrir um único painel com detalhes e edição, sem empilhar caixas abertas. Serviços mantêm valores, execução, pagamentos e fontes no mesmo painel. Listas importadas também têm uma prévia compacta; somente o item escolhido abre os campos de edição. O contrato em execução mostra apenas os campos que podem ser alterados, preservando o preço original. Dados completos e ações menos frequentes ficam em **Opções**.
 

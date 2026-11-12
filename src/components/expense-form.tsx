@@ -14,9 +14,10 @@ export function ExpenseCreateForm({
 }: {
   obra: string;
   fields: Field[];
-  entity?: "gastos" | "ocorrencias";
+  entity?: "gastos" | "ocorrencias" | "orcamento_propostas";
 }) {
-  const key = `${obra}:${entity}`;
+  const quote = entity === "orcamento_propostas";
+  const key = `${obra}:${entity}:${fields.find((f) => f.name === "grupo_id")?.value ?? ""}`;
   const [files, setFiles] = useDialogDraftState<File[]>(key + ":files", []);
   const [savedId, setSavedId] = useDialogDraftState<string | undefined>(
     key + ":saved",
@@ -79,11 +80,14 @@ export function ExpenseCreateForm({
         {queue.current.length > 0 ? (
           <div className="field">
             <p className="small muted">
-              O gasto já está salvo. Reenvie apenas as notas pendentes, sem
-              registrar outro gasto.
+              {quote
+                ? "A proposta já está salva. Reenvie apenas os arquivos pendentes, sem criar outra proposta."
+                : "O gasto já está salvo. Reenvie apenas as notas pendentes, sem registrar outro gasto."}
             </p>
             <label>
-              Substituir notas pendentes
+              {quote
+                ? "Substituir arquivos pendentes"
+                : "Substituir notas pendentes"}
               <input
                 type="file"
                 multiple
@@ -107,7 +111,7 @@ export function ExpenseCreateForm({
                     return;
                   }
                   queue.current = selected;
-                  setMessage("Novas notas selecionadas. Clique em reenviar.");
+                  setMessage("Arquivos selecionados. Clique em reenviar.");
                 }}
               />
             </label>
@@ -116,7 +120,11 @@ export function ExpenseCreateForm({
               disabled={busy}
               onClick={() => upload(savedId)}
             >
-              {busy ? "Enviando…" : "Reenviar notas pendentes"}
+              {busy
+                ? "Enviando…"
+                : quote
+                  ? "Reenviar arquivos pendentes"
+                  : "Reenviar notas pendentes"}
             </button>
             <button
               type="button"
@@ -144,7 +152,7 @@ export function ExpenseCreateForm({
               setMessage("");
             }}
           >
-            Adicionar outro gasto
+            {quote ? "Adicionar outra proposta" : "Adicionar outro gasto"}
           </button>
         )}
       </div>
@@ -170,7 +178,9 @@ export function ExpenseCreateForm({
     >
       <div className="receipt-picker">
         <label>
-          Notas fiscais e comprovantes (opcional)
+          {quote
+            ? "Foto ou documento do orçamento (opcional)"
+            : "Notas fiscais e comprovantes (opcional)"}
           <input
             type="file"
             name="attachments"
@@ -196,7 +206,7 @@ export function ExpenseCreateForm({
               setFiles(selected);
               setMessage(
                 selected.length
-                  ? `${selected.length} arquivo(s) serão enviados ao salvar o gasto.`
+                  ? `${selected.length} arquivo(s) serão enviados ao salvar ${quote ? "a proposta" : "o registro"}.`
                   : "",
               );
             }}

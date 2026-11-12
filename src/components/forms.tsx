@@ -44,6 +44,10 @@ function schema(kind: string) {
       return S.loginSchema;
     case "referencias_servicos":
       return S.serviceReferenceSchema;
+    case "orcamento_grupos":
+      return S.quoteGroupSchema;
+    case "orcamento_propostas":
+      return S.quoteSchema;
     case "gastos":
       return S.expenseSchema;
     case "contratos_mao_de_obra":

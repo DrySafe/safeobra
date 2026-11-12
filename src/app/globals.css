@@ -678,6 +678,214 @@ html[data-theme="dark"] {
   text-align: center;
 }
 
+.quote-board {
+  min-width: 0;
+}
+.quote-toolbar,
+.quote-group-heading,
+.quote-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.quote-toolbar {
+  margin: 24px 0;
+  align-items: end;
+}
+.quote-toolbar form {
+  flex: 1;
+  min-width: 0;
+  max-width: 480px;
+}
+.quote-group-heading {
+  justify-content: space-between;
+  margin: 24px 0 18px;
+}
+.quote-group-heading > div:first-child {
+  min-width: 0;
+  flex: 1 1 260px;
+}
+.quote-group-heading h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 22px;
+}
+.quote-group-heading h2 .badge {
+  margin-left: 8px;
+  vertical-align: middle;
+  font-weight: 500;
+  letter-spacing: normal;
+}
+.quote-group-heading p {
+  margin-bottom: 0;
+}
+.quote-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  margin-bottom: 24px;
+}
+.quote-summary > div {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 20px;
+  min-width: 0;
+}
+.quote-summary > div + div {
+  border-left: 1px solid var(--border);
+}
+.quote-summary span,
+.quote-summary small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.quote-summary strong {
+  font-size: clamp(18px, 2.2vw, 24px);
+  overflow-wrap: anywhere;
+}
+.quote-scroll-hint {
+  color: var(--accent-text);
+}
+.quote-comparison {
+  --quote-label-width: 120px;
+  --quote-column-width: 240px;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  margin-bottom: 16px;
+}
+.quote-comparison:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.quote-comparison table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: calc(
+    var(--quote-label-width) + var(--quotes) * var(--quote-column-width)
+  );
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 0;
+}
+.quote-label-column {
+  width: var(--quote-label-width);
+}
+.quote-comparison th,
+.quote-comparison td {
+  padding: 18px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  color: var(--ink);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.quote-comparison tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--panel);
+  font-size: 12px;
+  color: var(--muted);
+}
+.quote-comparison tr > :last-child {
+  border-right: 0;
+}
+.quote-comparison tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.quote-comparison thead th {
+  background: var(--bg);
+}
+.quote-comparison h3 {
+  margin: 8px 0 0;
+  font-size: 18px;
+  line-height: 1.4;
+}
+.quote-comparison .quote-chosen-column {
+  background: var(--active-bg);
+}
+.quote-prices strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 24px;
+  letter-spacing: -0.6px;
+}
+.quote-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.quote-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.quote-choice input {
+  flex-shrink: 0;
+  accent-color: var(--brand);
+}
+.quote-choice.is-chosen {
+  color: var(--accent-text);
+}
+.quote-files {
+  display: grid;
+  gap: 10px;
+}
+.quote-file {
+  display: grid;
+  gap: 6px;
+}
+.quote-empty {
+  padding: 28px;
+  text-align: center;
+}
+@media (max-width: 767px) {
+  .quote-toolbar form {
+    flex: 1;
+    max-width: none;
+  }
+  .quote-group-actions {
+    width: 100%;
+  }
+  .quote-group-actions > button {
+    flex: 1;
+    padding: 12px;
+  }
+  .quote-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .quote-summary > div {
+    padding: 14px;
+  }
+  .quote-comparison {
+    --quote-label-width: 108px;
+    --quote-column-width: 220px;
+  }
+  .quote-comparison td,
+  .quote-comparison th {
+    padding: 16px 12px;
+  }
+  .quote-prices strong {
+    font-size: 22px;
+  }
+  .bottom-link:last-child {
+    font-size: 11px;
+  }
+}
 .navigation-content {
   display: contents;
 }
@@ -1586,7 +1794,7 @@ button.text-button {
   }
   .bottom-navigation {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     position: fixed;
     bottom: 0;
     left: 0;

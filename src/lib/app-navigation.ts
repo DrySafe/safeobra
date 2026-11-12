@@ -3,6 +3,7 @@ export const mainSections = [
   ["equipe", "▤", "Serviços"],
   ["gastos", "↗", "Financeiro"],
   ["diario", "▧", "Obra"],
+  ["orcamentos", "≋", "Orçamentos"],
 ];
 export function sectionFor(tab: string) {
   return tab === "estimativas"
