@@ -1,9 +1,4 @@
-import { LoadingBar } from "@/components/navigation";
+import { LoadingScreen } from "@/components/loading-screen";
 export default function Loading() {
-  return (
-    <main role="status" aria-live="polite">
-      <LoadingBar />
-      <p>Carregando sua obra…</p>
-    </main>
-  );
+  return <LoadingScreen />;
 }

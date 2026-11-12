@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { LoadingScreen } from "./loading-screen";
 import { useCloseDialog } from "./simple-ui";
 import { useRememberedForm } from "./dialog-drafts";
 import { mainSections, sectionFor } from "@/lib/app-navigation";
@@ -9,7 +10,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
   useTransition,
   type ReactNode,
@@ -26,9 +26,14 @@ const ReadingContext = createContext<{
   refresh: () => {},
   announce: () => {},
 });
-export function LoadingBar() {
+export function LoadingBar({ announce = true }: { announce?: boolean }) {
   return (
-    <div className="reading-bar" role="status" aria-live="polite">
+    <div
+      className="reading-bar"
+      role={announce ? "status" : undefined}
+      aria-live={announce ? "polite" : undefined}
+      aria-hidden={!announce}
+    >
       <span className="sr-only">Carregando dados…</span>
       <span className="reading-bar-fill" />
     </div>
@@ -44,7 +49,19 @@ export function ReadingProvider({ children }: { children: ReactNode }) {
       return () => clearTimeout(timer);
     }
   }, [notice]);
-  const [pending, start] = useTransition();
+  const [pending, startNavigation] = useTransition();
+  const [refreshing, startRefresh] = useTransition();
+  const [destination, setDestination] = useState("Carregando sua obra");
+  const [showLoading, setShowLoading] = useState(false);
+  useEffect(() => {
+    if (!pending) {
+      setShowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowLoading(true), 180);
+    return () => clearTimeout(timer);
+  }, [pending]);
+  const loadingVisible = pending && showLoading;
   const begin = useCallback(() => {
     let ended = false;
     setReads((n) => n + 1);
@@ -56,16 +73,40 @@ export function ReadingProvider({ children }: { children: ReactNode }) {
     };
   }, []);
   const navigate = useCallback(
-    (href: string) => start(() => router.push(href)),
+    (href: string) => {
+      const url = new URL(href, window.location.origin);
+      const section = mainSections.find(
+        ([key]) =>
+          key === sectionFor(url.searchParams.get("tab") || "dashboard"),
+      );
+      setDestination(
+        url.pathname === "/" && section
+          ? `Abrindo ${section[2]}`
+          : "Preparando sua próxima tela",
+      );
+      startNavigation(() => router.push(href));
+    },
     [router],
   );
-  const refresh = useCallback(() => start(() => router.refresh()), [router]);
+  const refresh = useCallback(
+    () => startRefresh(() => router.refresh()),
+    [router],
+  );
   return (
     <ReadingContext.Provider
       value={{ begin, navigate, refresh, announce: setNotice }}
     >
-      {(pending || reads > 0) && <LoadingBar />}
-      {children}
+      {(pending || refreshing || reads > 0) && (
+        <LoadingBar announce={!loadingVisible} />
+      )}
+      <div
+        className="navigation-content"
+        inert={loadingVisible}
+        aria-busy={pending}
+      >
+        {children}
+      </div>
+      {loadingVisible && <LoadingScreen title={destination} />}
       {notice && (
         <div className="app-toast" role="status">
           {notice}

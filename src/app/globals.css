@@ -678,6 +678,102 @@ html[data-theme="dark"] {
   text-align: center;
 }
 
+.navigation-content {
+  display: contents;
+}
+.route-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--ink);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.route-loading-card {
+  width: min(100%, 380px);
+  padding: 40px 24px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: var(--panel);
+}
+.route-loading-symbol {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 28px;
+  color: var(--accent-text);
+}
+.route-loading-ring {
+  width: 100%;
+  height: 100%;
+  stroke-width: 2;
+  animation: loading-turn 1.8s linear infinite;
+}
+.route-loading-ring-track {
+  stroke: var(--border);
+}
+.route-loading-ring-tip {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-dasharray: 68 159;
+}
+.route-loading-home {
+  position: absolute;
+  inset: 23px;
+  width: 34px;
+  height: 34px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.route-loading-brand {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+.route-loading-card h2 {
+  margin: 0;
+  font-size: clamp(21px, 5vw, 25px);
+  line-height: 1.3;
+  letter-spacing: -0.6px;
+}
+.route-loading-card p {
+  margin: 12px auto 28px;
+  max-width: 260px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.route-loading-progress {
+  width: 120px;
+  height: 3px;
+  margin: auto;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--loading-track);
+}
+.route-loading-progress span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-text);
+  animation: reading 1.5s ease-in-out infinite;
+}
+@keyframes loading-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .reading-bar {
   position: fixed;
   inset: 0 0 auto;
@@ -876,8 +972,13 @@ html[data-theme="dark"] {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .route-loading-ring,
+  .route-loading-progress span,
   .reading-bar-fill {
     animation: none;
+  }
+  .route-loading-progress span,
+  .reading-bar-fill {
     width: 100%;
   }
 }
