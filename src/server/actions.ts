@@ -163,7 +163,7 @@ export async function updateRecord(
             : "Desconto atualizado.",
       };
     }
-    if (entity === "gastos") data = S.expenseSchema.parse(raw);
+    if (entity === "gastos") data = S.expenseUpdateSchema.parse(raw);
     else if (entity === "contratos_mao_de_obra")
       data = S.contractSchema.parse(raw);
     else if (entity === "servicos") {
@@ -186,6 +186,27 @@ export async function updateRecord(
     return { ok: true, message: "Registro atualizado" };
   } catch (e) {
     return fail(e);
+  }
+}
+export async function markExpensePaid(
+  obra: string,
+  record: string,
+): Promise<Result> {
+  try {
+    const { client } = await access(obra, true);
+    S.id.parse(record);
+    const { error, data } = await client
+      .from("gastos")
+      .update({ status_pagamento: "pago" })
+      .eq("obra_id", obra)
+      .eq("id", record)
+      .select("id");
+    if (error || !data?.length)
+      throw new Error("Não foi possível marcar a despesa como paga");
+    revalidatePath("/");
+    return { ok: true, message: "Despesa marcada como paga" };
+  } catch (error) {
+    return fail(error);
   }
 }
 export async function removeRecord(

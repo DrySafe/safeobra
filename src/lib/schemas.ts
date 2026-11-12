@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { serviceUnits } from "./estimates.ts";
+import { expensePaymentStatuses } from "./expenses.ts";
 export const categories = [
   "Alvenaria",
   "Elétrica",
@@ -21,6 +22,7 @@ export const loginSchema = z.object({
 export const obraSchema = z.object({ nome: text, orcamento: cents });
 export const expenseCategorySchema = text;
 export const expenseSchema = z.object({
+  status_pagamento: z.enum(expensePaymentStatuses).default("pago"),
   categoria: expenseCategorySchema,
   descricao: text,
   fornecedor: text,
@@ -32,6 +34,12 @@ export const expenseSchema = z.object({
   observacoes: optional,
   status_entrega: z.enum(["pendente", "entregue"]),
 });
+// Older callers can edit a purchase without reclassifying its payment status.
+export const expenseUpdateSchema = expenseSchema
+  .omit({ status_pagamento: true })
+  .extend({
+    status_pagamento: z.enum(expensePaymentStatuses).optional(),
+  });
 export const contractSchema = z.object({
   profissional: text,
   tipo: z.enum(["empreitada", "diaria"]),

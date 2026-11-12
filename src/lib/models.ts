@@ -5,6 +5,7 @@ export type Base = {
   criado_por: string;
 };
 export type Expense = Base & {
+  status_pagamento: import("./expenses").ExpensePaymentStatus;
   categoria: string;
   descricao: string;
   fornecedor: string;

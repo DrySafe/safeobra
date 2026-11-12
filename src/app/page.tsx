@@ -28,9 +28,11 @@ import {
   memberAction,
   updateRecord,
   cancelPayment,
+  markExpensePaid,
 } from "@/server/actions";
 import { categories } from "@/lib/schemas";
 import { money, dateBR, execution, balance } from "@/lib/finance";
+import { expenseTotals, type ExpensePaymentStatus } from "@/lib/expenses";
 import type * as M from "@/lib/models";
 import { ExpenseCreateForm } from "@/components/expense-form";
 import { ServiceEstimator } from "@/components/service-estimator";
@@ -89,10 +91,22 @@ const measurementFields = (stage?: M.Stage): Field[] => [
     value: String(stage?.quantidade ?? 1),
   },
 ];
-const expenseFields = (suggestions: string[]): Field[] => [
+const expenseFields = (
+  suggestions: string[],
+  status: ExpensePaymentStatus,
+): Field[] => [
   { name: "categoria", label: "Categoria", suggestions },
   { name: "descricao", label: "Descrição" },
   { name: "fornecedor", label: "Fornecedor / loja" },
+  {
+    name: "status_pagamento",
+    label: "Situação do pagamento",
+    value: status,
+    options: [
+      { value: "pago", label: "Pago" },
+      { value: "a_pagar", label: "A pagar" },
+    ],
+  },
   { name: "quantidade", label: "Quantidade", type: "number", value: "1" },
   amount("valor_unitario", "Valor unitário"),
   date("data_compra", "Compra"),
@@ -105,7 +119,14 @@ const expenseFields = (suggestions: string[]): Field[] => [
   {
     name: "forma_pagamento",
     label: "Forma de pagamento",
-    options: opts(["Pix", "Dinheiro", "Cartão", "Boleto", "Transferência"]),
+    options: opts([
+      "Pix",
+      "Dinheiro",
+      "Cartão",
+      "Boleto",
+      "Transferência",
+      "A definir",
+    ]),
   },
   {
     name: "status_entrega",
@@ -132,17 +153,26 @@ function Card({
   label,
   value,
   sub,
+  href,
 }: {
   label: string;
   value: string;
   sub: string;
+  href?: string;
 }) {
-  return (
-    <article className="card">
+  const content = (
+    <>
       <span className="muted small">{label}</span>
       <div className="value">{value}</div>
       <span className="muted small">{sub}</span>
-    </article>
+    </>
+  );
+  return href ? (
+    <Link href={href} className="card summary-card-link">
+      {content}
+    </Link>
+  ) : (
+    <article className="card">{content}</article>
   );
 }
 function Progress({ value }: { value: number }) {
@@ -387,7 +417,13 @@ export default async function Home({
         regiao: "Obra atual",
       });
   const payments = allPayments.filter((p) => !p.anulado);
-  const total = expenses.reduce((s, x) => s + Number(x.valor_total), 0);
+  const {
+    total,
+    paid: paidExpenseTotal,
+    pending: unpaidExpenseTotal,
+    pendingCount,
+  } = expenseTotals(expenses);
+  const paidExpenses = expenses.filter((e) => e.status_pagamento === "pago");
   const stats = new Map(
     contracts.map((c) => {
       if (c.itens_ativo) {
@@ -479,9 +515,14 @@ export default async function Home({
   const expenseCategories = [
     ...new Set([...categories, ...expenses.map((e) => e.categoria)]),
   ].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  const expenseFormFields = expenseFields(expenseCategories);
+  const expenseView: ExpensePaymentStatus =
+    query.situacao === "a_pagar" ? "a_pagar" : "pago";
+  const expenseFormFields = expenseFields(expenseCategories, expenseView);
+  const expenseHref = (status: ExpensePaymentStatus) =>
+    `/?obra=${obraId}&tab=gastos&situacao=${status}`;
   const visibleExpenses = expenses.filter(
     (e) =>
+      e.status_pagamento === expenseView &&
       (!query.categoria || e.categoria === query.categoria) &&
       (!query.status || e.status_entrega === query.status) &&
       (!query.inicio || e.data_compra >= query.inicio) &&
@@ -600,11 +641,18 @@ export default async function Home({
           )}
           {tab === "dashboard" && (
             <>
-              <div className="cards">
+              <div className="cards dashboard-cards">
                 <Card
-                  label="Compras e despesas"
-                  value={money(total)}
-                  sub="Materiais, serviços e outras despesas"
+                  label="Despesas pagas"
+                  value={money(paidExpenseTotal)}
+                  sub={"Total das compras: " + money(total)}
+                  href={expenseHref("pago")}
+                />
+                <Card
+                  label="Materiais a pagar"
+                  value={money(unpaidExpenseTotal)}
+                  sub={`${pendingCount} despesa(s) aguardando pagamento`}
+                  href={expenseHref("a_pagar")}
                 />
                 <Card
                   label="Pago à equipe"
@@ -647,38 +695,38 @@ export default async function Home({
               </div>
               <div className="columns">
                 <section className="panel">
-                  <h2>Gastos por categoria</h2>
-                  {total ? (
+                  <h2>Despesas pagas por categoria</h2>
+                  {paidExpenseTotal ? (
                     expenseCategories
                       .filter((cat) =>
-                        expenses.some((e) => e.categoria === cat),
+                        paidExpenses.some((e) => e.categoria === cat),
                       )
                       .sort(
                         (a, b) =>
-                          expenses
+                          paidExpenses
                             .filter((e) => e.categoria === b)
                             .reduce((n, e) => n + Number(e.valor_total), 0) -
-                          expenses
+                          paidExpenses
                             .filter((e) => e.categoria === a)
                             .reduce((n, e) => n + Number(e.valor_total), 0),
                       )
                       .slice(0, 3)
                       .map((cat) => {
-                        const value = expenses
+                        const value = paidExpenses
                           .filter((e) => e.categoria === cat)
                           .reduce((s, e) => s + Number(e.valor_total), 0);
                         return (
                           <div className="chart-bar" key={cat}>
                             <span>{cat}</span>
-                            <Progress value={(value / total) * 100} />
+                            <Progress
+                              value={(value / paidExpenseTotal) * 100}
+                            />
                             <strong>{money(value)}</strong>
                           </div>
                         );
                       })
                   ) : (
-                    <p className="empty">
-                      Os gastos aparecerão aqui após o primeiro lançamento.
-                    </p>
+                    <p className="empty">Ainda não há despesas pagas.</p>
                   )}
                 </section>
                 <section className="panel">
@@ -745,6 +793,20 @@ export default async function Home({
           )}
           {tab === "gastos" && (
             <>
+              <nav className="expense-views" aria-label="Situação das despesas">
+                <Link
+                  href={expenseHref("pago")}
+                  aria-current={expenseView === "pago" ? "page" : undefined}
+                >
+                  Pagas <span>{paidExpenses.length}</span>
+                </Link>
+                <Link
+                  href={expenseHref("a_pagar")}
+                  aria-current={expenseView === "a_pagar" ? "page" : undefined}
+                >
+                  A pagar <span>{pendingCount}</span>
+                </Link>
+              </nav>
               <div className="area-actions">
                 {admin && (
                   <ActionSheet
@@ -762,6 +824,7 @@ export default async function Home({
                   <QueryForm>
                     <input type="hidden" name="obra" value={obraId} />
                     <input type="hidden" name="tab" value="gastos" />
+                    <input type="hidden" name="situacao" value={expenseView} />
                     <label>
                       Descrição ou fornecedor
                       <input name="busca" defaultValue={query.busca} />
@@ -805,7 +868,10 @@ export default async function Home({
                       </label>
                     </div>
                     <button>Aplicar filtros</button>
-                    <Link className="button secondary" href={href("gastos")}>
+                    <Link
+                      className="button secondary"
+                      href={expenseHref(expenseView)}
+                    >
                       Limpar filtros
                     </Link>
                   </QueryForm>
@@ -813,7 +879,11 @@ export default async function Home({
               </div>
               <section className="panel">
                 <div className="section-title">
-                  <h2>Compras e despesas</h2>
+                  <h2>
+                    {expenseView === "pago"
+                      ? "Despesas pagas"
+                      : "Despesas a pagar"}
+                  </h2>
                   <strong>
                     {money(
                       visibleExpenses.reduce(
@@ -829,7 +899,11 @@ export default async function Home({
                 </p>
                 <RecordList
                   label="Despesas"
-                  empty="Nenhum gasto encontrado para estes filtros."
+                  empty={
+                    expenseView === "pago"
+                      ? "Nenhuma despesa paga encontrada para estes filtros."
+                      : "Nenhuma despesa a pagar encontrada para estes filtros."
+                  }
                   items={visibleExpenses
                     .slice()
                     .sort(
@@ -842,13 +916,18 @@ export default async function Home({
                       title: e.descricao,
                       subtitle: `${dateBR(e.data_compra)} · ${e.fornecedor}`,
                       amount: money(Number(e.valor_total)),
-                      status:
-                        e.status_entrega === "pendente"
-                          ? "Entrega pendente"
-                          : "Entregue",
+                      status: `${e.status_pagamento === "pago" ? "Pago" : "A pagar"} · ${e.status_entrega === "pendente" ? "Entrega pendente" : "Entregue"}`,
                       details: (
                         <>
                           <dl className="detail-values">
+                            <div>
+                              <dt>Situação do pagamento</dt>
+                              <dd>
+                                {e.status_pagamento === "pago"
+                                  ? "Pago"
+                                  : "A pagar"}
+                              </dd>
+                            </div>
                             <div>
                               <dt>Total</dt>
                               <dd>{money(Number(e.valor_total))}</dd>
@@ -882,6 +961,19 @@ export default async function Home({
                             </div>
                           </dl>
                           {e.observacoes && <p>{e.observacoes}</p>}
+                          {admin && e.status_pagamento === "a_pagar" && (
+                            <div className="dialog-actions">
+                              <ActionButton
+                                label="Marcar como pago"
+                                action={markExpensePaid.bind(
+                                  null,
+                                  obraId,
+                                  e.id,
+                                )}
+                                navigateTo={expenseHref("pago")}
+                              />
+                            </div>
+                          )}
                           <Files
                             rows={attachments}
                             obra={obraId}
@@ -1544,6 +1636,11 @@ export default async function Home({
                   />
                 </div>
                 <p className="small muted">
+                  Despesas pagas: {money(paidExpenseTotal)} · A pagar:{" "}
+                  {money(unpaidExpenseTotal)}. O total registrado inclui as duas
+                  situações.
+                </p>
+                <p className="small muted">
                   Gastos e pagamentos são apresentados separadamente. Não some
                   pagamentos já lançados em Serviço (mão de obra) novamente ao
                   total de gastos.
@@ -1556,6 +1653,7 @@ export default async function Home({
                         <th>Data</th>
                         <th>Descrição</th>
                         <th>Categoria</th>
+                        <th>Pagamento</th>
                         <th>Valor</th>
                       </tr>
                     </thead>
@@ -1578,6 +1676,11 @@ export default async function Home({
                             <td>{dateBR(e.data_compra)}</td>
                             <td>{e.descricao}</td>
                             <td>{e.categoria}</td>
+                            <td>
+                              {e.status_pagamento === "pago"
+                                ? "Pago"
+                                : "A pagar"}
+                            </td>
                             <td>{money(e.valor_total)}</td>
                           </tr>
                         ))}

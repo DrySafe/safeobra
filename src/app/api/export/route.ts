@@ -8,6 +8,7 @@ const filters = z.object({
   busca: z.string().max(300).optional(),
   categoria: expenseCategorySchema.optional(),
   status: z.enum(["pendente", "entregue"]).optional(),
+  situacao: z.enum(["pago", "a_pagar"]).optional(),
   inicio: z.iso.date().optional(),
   fim: z.iso.date().optional(),
 });
@@ -28,8 +29,9 @@ export async function GET(request: Request) {
         "Total (R$)",
         "Data compra",
         "Data entrega",
-        "Pagamento",
-        "Status",
+        "Forma de pagamento",
+        "Situação do pagamento",
+        "Entrega",
       ],
     ];
     for (let from = 0; ; from += 1000) {
@@ -41,6 +43,7 @@ export async function GET(request: Request) {
         .range(from, from + 999);
       if (f.categoria) query = query.eq("categoria", f.categoria);
       if (f.status) query = query.eq("status_entrega", f.status);
+      if (f.situacao) query = query.eq("status_pagamento", f.situacao);
       if (f.inicio) query = query.gte("data_compra", f.inicio);
       if (f.fim) query = query.lte("data_compra", f.fim);
       const { data, error } = await query;
@@ -63,6 +66,7 @@ export async function GET(request: Request) {
           e.data_compra.split("-").reverse().join("/"),
           e.data_entrega?.split("-").reverse().join("/"),
           e.forma_pagamento,
+          e.status_pagamento === "pago" ? "Pago" : "A pagar",
           e.status_entrega,
         ]);
       }

@@ -1,6 +1,8 @@
 "use client";
 import { useCloseDialog } from "./simple-ui";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import type { ExpensePaymentStatus } from "@/lib/expenses";
 import { useDialogDraftRef, useDialogDraftState } from "./dialog-drafts";
 import { DataForm, type Field } from "./forms";
 import { useNotice, useReading, useRefresh } from "./navigation";
@@ -20,14 +22,22 @@ export function ExpenseCreateForm({
     key + ":saved",
     undefined,
   );
+  const [savedStatus, setSavedStatus] =
+    useDialogDraftState<ExpensePaymentStatus>(key + ":payment-status", "pago");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useDialogDraftState(key + ":message", "");
   const queue = useDialogDraftRef<File[]>(key + ":queue", []);
   const refresh = useRefresh();
   const close = useCloseDialog();
   const announce = useNotice();
+  const router = useRouter();
   useReading(busy);
-  async function upload(id: string) {
+  function finish(status: ExpensePaymentStatus) {
+    close?.();
+    if (entity === "gastos")
+      router.push(`/?obra=${obra}&tab=gastos&situacao=${status}`);
+  }
+  async function upload(id: string, status = savedStatus) {
     setBusy(true);
     setMessage("Enviando arquivos…");
     try {
@@ -50,7 +60,7 @@ export function ExpenseCreateForm({
       setFiles([]);
       setMessage("");
       refresh();
-      close?.();
+      finish(status);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -117,6 +127,7 @@ export function ExpenseCreateForm({
                 setSavedId(undefined);
                 setFiles([]);
                 setMessage("");
+                finish(savedStatus);
               }}
             >
               Enviar depois
@@ -144,13 +155,17 @@ export function ExpenseCreateForm({
       obra={obra}
       fields={fields}
       title={files.length ? "Salvar e enviar arquivos" : "Salvar registro"}
-      onSaved={async (result) => {
+      onSaved={async (result, data) => {
+        const status: ExpensePaymentStatus =
+          data.status_pagamento === "a_pagar" ? "a_pagar" : "pago";
+        setSavedStatus(status);
         if (files.length && result.recordId) {
           queue.current = [...files];
           setSavedId(result.recordId);
-          await upload(result.recordId);
+          await upload(result.recordId, status);
+          return;
         } else setFiles([]);
-        if (queue.current.length === 0) close?.();
+        if (queue.current.length === 0) finish(status);
       }}
     >
       <div className="receipt-picker">

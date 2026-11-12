@@ -141,6 +141,8 @@ Fechar um painel pelo botão, pelo Esc ou pelo fundo preserva o preenchimento em
 
 Em despesas, **Categoria** aceita um nome digitado ou uma sugestão. Categorias já usadas na obra aparecem nas sugestões, nos filtros, no resumo por categoria e na exportação CSV.
 
+Em **Financeiro → Compras e despesas**, escolha **Pago** ou **A pagar** no cadastro. As listas **Pagas** e **A pagar** são separadas; ao quitar um item, abra-o e use **Marcar como pago**, ou altere a situação na edição. A tela retorna à lista correspondente. O Resumo separa **Despesas pagas** de **Materiais a pagar**; o total comprado continua sendo a soma dos dois, também identificado nos relatórios e no CSV. Pagamento e entrega são controles independentes. Quitar uma despesa mantém o mesmo registro, seus anexos e o valor original; não cria um pagamento de mão de obra. Despesas anteriores à inclusão desse controle permanecem como pagas e podem ser reclassificadas pelo ADM.
+
 ## Tabela de serviços da empreitada e IA
 
 Em **Serviços**, selecione o contrato para acompanhar serviços, estimativas e saldo. A tabela mostra itens a realizar, em andamento e concluídos, classificação incluído/extra, avanço, estimativa de mercado, valor cobrado/alocado, pago líquido e saldo. No celular, as linhas viram cartões. ADM adiciona/edita itens, registra conclusão, pesquisa preços, aprova extras e vincula pagamentos. USER consulta.

@@ -85,7 +85,10 @@ export function DataForm({
   title?: string;
   record?: string;
   children?: ReactNode;
-  onSaved?: (result: A.Result) => void | Promise<void>;
+  onSaved?: (
+    result: A.Result,
+    data: Record<string, unknown>,
+  ) => void | Promise<void>;
 }) {
   const [result, setResult] = useState<A.Result>();
   const [pending, start] = useTransition();
@@ -158,7 +161,7 @@ export function DataForm({
             setResult(res);
             if (res.ok) {
               draft.clear();
-              await onSaved?.(res);
+              await onSaved?.(res, parsed.data);
               if (!res.link && kind !== "login" && kind !== "signup") {
                 announce(res.message);
                 if (!onSaved) close?.();
@@ -174,6 +177,10 @@ export function DataForm({
                 );
               else if (!record && res.recordId && kind === "obra")
                 router.push(`/?obra=${res.recordId}`);
+              else if (kind === "gastos" && !onSaved)
+                router.push(
+                  `/?obra=${obra}&tab=gastos&situacao=${"status_pagamento" in parsed.data ? parsed.data.status_pagamento : "pago"}`,
+                );
               else {
                 ref.current?.reset();
               }
@@ -276,14 +283,17 @@ export function ActionButton({
   label,
   action,
   confirm = false,
+  navigateTo,
 }: {
   label: string;
   action: () => Promise<A.Result>;
   confirm?: boolean;
+  navigateTo?: string;
 }) {
   const [result, setResult] = useState<A.Result>();
   const [pending, start] = useTransition();
   useReading(pending);
+  const router = useRouter();
   const close = useCloseDialog(),
     announce = useNotice();
   return (
@@ -300,6 +310,7 @@ export function ActionButton({
               if (r.ok && !r.link) {
                 announce(r.message);
                 close?.();
+                if (navigateTo) router.push(navigateTo);
               }
               // Server mutations already return the revalidated RSC tree.
               // Signed URL reads must not refresh every dataset.

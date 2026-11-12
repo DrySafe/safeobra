@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   expenseSchema,
+  expenseUpdateSchema,
   paymentSchema,
   occurrenceSchema,
   MAX_UPLOAD,
@@ -33,6 +34,30 @@ const expense = {
 };
 test("gasto aceita entrega não informada e observações vazias", () => {
   assert.equal(expenseSchema.parse(expense).observacoes, "");
+  assert.equal(expenseSchema.parse(expense).status_pagamento, "pago");
+});
+test("pagamento da despesa é independente da entrega e aceita apenas as situações previstas", () => {
+  assert.equal(
+    expenseSchema.parse({
+      ...expense,
+      status_pagamento: "a_pagar",
+      status_entrega: "entregue",
+    }).status_pagamento,
+    "a_pagar",
+  );
+  assert.equal(
+    expenseSchema.safeParse({ ...expense, status_pagamento: "quitado" })
+      .success,
+    false,
+  );
+});
+test("edição legada não altera a situação de pagamento quando ela não é informada", () => {
+  assert.equal(expenseUpdateSchema.parse(expense).status_pagamento, undefined);
+  assert.equal(
+    expenseUpdateSchema.parse({ ...expense, status_pagamento: "a_pagar" })
+      .status_pagamento,
+    "a_pagar",
+  );
 });
 test("despesa aceita categoria personalizada e rejeita valor negativo ou categoria vazia", () => {
   assert.equal(

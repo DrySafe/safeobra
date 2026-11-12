@@ -1271,3 +1271,118 @@ test("devolução de desconto mantém função interna privada e nega usuário e
         false,
       );
   }));
+
+test("despesa anterior mantém Pago por padrão; quitar pendência mantém o mesmo valor e registro", async () =>
+  asUser(admin, async () => {
+    const row = (await client.query(expense, [obra])).rows[0];
+    assert.equal(
+      (
+        await client.query(
+          "select status_pagamento from public.gastos where id=$1",
+          [row.id],
+        )
+      ).rows[0].status_pagamento,
+      "pago",
+    );
+    const before = (
+      await client.query(
+        "select quantidade,valor_unitario,valor_total from public.gastos where id=$1",
+        [row.id],
+      )
+    ).rows[0];
+    await client.query(
+      "update public.gastos set status_pagamento='a_pagar',status_entrega='entregue' where id=$1",
+      [row.id],
+    );
+    assert.equal(
+      Number(
+        (
+          await client.query(
+            "select sum(valor_total) amount from public.gastos where obra_id=$1 and status_pagamento='a_pagar'",
+            [obra],
+          )
+        ).rows[0].amount,
+      ),
+      5000,
+    );
+    for (let n = 0; n < 2; n++)
+      await client.query(
+        "update public.gastos set status_pagamento='pago' where id=$1",
+        [row.id],
+      );
+    assert.deepEqual(
+      (
+        await client.query(
+          "select quantidade,valor_unitario,valor_total from public.gastos where id=$1",
+          [row.id],
+        )
+      ).rows[0],
+      before,
+    );
+    assert.equal(
+      (
+        await client.query(
+          "select count(*) n from public.gastos where obra_id=$1",
+          [obra],
+        )
+      ).rows[0].n,
+      "1",
+    );
+    assert.equal(
+      (
+        await client.query(
+          "select count(*) n from public.pagamentos where obra_id=$1",
+          [obra],
+        )
+      ).rows[0].n,
+      "0",
+    );
+    assert.equal(
+      (
+        await client.query(
+          "select status_entrega from public.gastos where id=$1",
+          [row.id],
+        )
+      ).rows[0].status_entrega,
+      "entregue",
+    );
+    await rejectWithSavepoint(
+      "update public.gastos set status_pagamento='quitado' where id=$1",
+      [row.id],
+      /check constraint/,
+    );
+  }));
+
+test("USER e terceiro não podem quitar despesas diretamente no banco", async () =>
+  asUser(admin, async () => {
+    const row = (await client.query(expense, [obra])).rows[0];
+    await client.query(
+      "update public.gastos set status_pagamento='a_pagar' where id=$1",
+      [row.id],
+    );
+    for (const uid of [user, outsider]) {
+      await client.query("savepoint unauthorized_expense_payment");
+      await client.query("select set_config('request.jwt.claim.sub',$1,true)", [
+        uid,
+      ]);
+      assert.equal(
+        (
+          await client.query(
+            "update public.gastos set status_pagamento='pago' where id=$1",
+            [row.id],
+          )
+        ).rowCount,
+        0,
+      );
+      await client.query("rollback to savepoint unauthorized_expense_payment");
+    }
+    assert.equal(
+      (
+        await client.query(
+          "select status_pagamento from public.gastos where id=$1",
+          [row.id],
+        )
+      ).rows[0].status_pagamento,
+      "a_pagar",
+    );
+  }));
